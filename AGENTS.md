@@ -2,6 +2,8 @@
 
 Guide for AI agents and contributors working on this repository.
 
+> **Humans / GitHub:** [README.md](./README.md) · **Cursor:** `.cursor/rules/agent-handoff.mdc` auto-loads this handoff.
+
 **Branch-specific learning guide:** [agents-learning-model.md](./agents-learning-model.md) — read this on the `LEARNING` branch for code-aware memory, 1–5 ratings, and retrieval.
 
 ---
@@ -331,7 +333,7 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 | `buildGenerationPrompts` dead code | Low | ~50 lines; safe to delete when refactoring |
 | `.env.example` vs code defaults | Low | GLSL model default differs from example |
 | User `.env` var names | Medium | `ALLOW_GEMINI_FALLBACK` has no effect |
-| No `README.md` | Low | Onboarding relies on AGENTS.md + agents-learning-model.md |
+| No `README.md` | ~~Low~~ Fixed | [README.md](./README.md) points here |
 | `database.json` in git | Medium | Grows with every generation; bloats repo |
 | Full sketch load on client | Medium | `/api/sketches` returns entire archive |
 | Chrome grid render | **High — still failing** | Fix landed in `shared-grid-renderer.js` but black cells persist on Chrome; see [Known open bug: grid rendering](#known-open-bug-grid-rendering-still-failing) |
@@ -378,7 +380,7 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 - Add `storage/mongo.js` when implementing MongoDB (follow `storage/index.js` pattern)
 - Delete `buildGenerationPrompts()` once confirmed unused
 - Wire `autoCurateBatch()` behind `LEARNING_MODE=autonomous`
-- Add `README.md` pointing here
+- Add `README.md` pointing here — done; keep in sync with handoff section
 - Merge `LEARNING` → `main` via PR
 
 ---

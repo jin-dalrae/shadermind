@@ -1,0 +1,20 @@
+---
+description: ShaderMind agent handoff — read AGENTS.md before any work
+alwaysApply: true
+---
+
+# ShaderMind agent handoff
+
+Before editing code, read **[AGENTS.md](../AGENTS.md)** § **Agent handoff — start here**.
+
+**Branch:** `LEARNING` (not `main` for active work)
+
+**Also read on LEARNING:**
+- [agents-learning-model.md](../agents-learning-model.md) — retrieval, `preferenceMemory`, 1–5 curation
+- [work/learning-feature.md](../work/learning-feature.md) — spec + planned items
+
+**Open bug (do not assume fixed):** Chrome studio grid = black cells. See AGENTS.md § **Known open bug: grid rendering**.
+
+**Quick start:** `npm install && npm run dev` → `http://localhost:8080/?v=5` · `npm test` for learning tests
+
+**Conventions:** ES modules, no TypeScript, GLSL uses `gl_FragColor` (WebGL 1.0). Learning logic lives in `lib/learning/` — do not duplicate retrieval paths. Do not commit `.env`.
