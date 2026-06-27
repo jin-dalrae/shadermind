@@ -14,6 +14,7 @@ import {
   extractCodeFeatures,
   findMostSimilarShader,
   normalizeDna,
+  ratingValue,
   selectLearningExamples
 } from "./lib/learning.js";
 
@@ -528,8 +529,9 @@ function recordRatingsAndPersist(
   explicitRatingIds = [],
   compileResults = {}
 ) {
-  let goodCount = 0;
-  let badCount = 0;
+  const ratingCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let ratingTotal = 0;
+  let ratedCount = 0;
   const explicitIds = new Set(Array.isArray(explicitRatingIds) ? explicitRatingIds : []);
   const safeCompileResults = compileResults && typeof compileResults === "object"
     ? compileResults
@@ -537,7 +539,8 @@ function recordRatingsAndPersist(
 
   if (newSketches && Array.isArray(newSketches)) {
     newSketches.forEach(s => {
-      const rating = ratings[s.id] || "bad";
+      const rating = ratingValue(ratings[s.id]);
+      if (rating === null) return;
       const existingIdx = db.sketches.findIndex(e => e.id === s.id);
       const existing = existingIdx >= 0 ? db.sketches[existingIdx] : {};
       const storedSketch = {
@@ -550,8 +553,9 @@ function recordRatingsAndPersist(
         codeFeatures: s.codeFeatures || extractCodeFeatures(s.glsl)
       };
 
-      if (rating === "good") goodCount++;
-      else badCount++;
+      ratingCounts[rating] += 1;
+      ratingTotal += rating;
+      ratedCount += 1;
 
       if (existingIdx === -1) {
         db.sketches.push(storedSketch);
@@ -562,38 +566,52 @@ function recordRatingsAndPersist(
     });
   } else {
     db.sketches.forEach(s => {
-      if (ratings[s.id]) {
+      const rating = ratingValue(ratings[s.id]);
+      if (rating !== null) {
         s.rated = true;
-        s.rating = ratings[s.id];
+        s.rating = rating;
         s.ratingSource = explicitIds.has(s.id) ? "explicit" : "defaulted";
         s.compile = normalizeCompileResult(safeCompileResults[s.id] || s.compile);
         s.codeFeatures ||= extractCodeFeatures(s.glsl);
-        if (s.rating === "good") goodCount++;
-        else if (s.rating === "bad") badCount++;
+        ratingCounts[rating] += 1;
+        ratingTotal += rating;
+        ratedCount += 1;
       }
     });
   }
 
   db.generationCount = Math.max(db.generationCount, generation);
-  const totalRatedSketches = db.sketches.filter(s => s.rated).length;
-  const totalGoodSketches = db.sketches.filter(s => s.rating === "good").length;
+  const totalRatedSketches = db.sketches.filter(s => s.rated && ratingValue(s.rating) !== null).length;
+  const totalHighRatedSketches = db.sketches.filter(s => ratingValue(s.rating) >= 4).length;
   db.successRate = totalRatedSketches > 0
-    ? parseFloat(((totalGoodSketches / totalRatedSketches) * 100).toFixed(1))
+    ? parseFloat(((totalHighRatedSketches / totalRatedSketches) * 100).toFixed(1))
     : 0;
+
+  const averageRating = ratedCount > 0
+    ? parseFloat((ratingTotal / ratedCount).toFixed(2))
+    : 0;
+  const highRatedCount = ratingCounts[4] + ratingCounts[5];
+  const lowRatedCount = ratingCounts[1] + ratingCounts[2];
 
   db.statistics.generations.push({
     generation,
-    goodCount,
-    badCount,
-    successRate: goodCount + badCount > 0
-      ? parseFloat(((goodCount / (goodCount + badCount)) * 100).toFixed(1))
+    ratingCounts,
+    averageRating,
+    highRatedCount,
+    lowRatedCount,
+    neutralCount: ratingCounts[3],
+    // Keep these fields while old UI/data consumers still understand good/bad.
+    goodCount: highRatedCount,
+    badCount: lowRatedCount,
+    successRate: ratedCount > 0
+      ? parseFloat(((highRatedCount / ratedCount) * 100).toFixed(1))
       : 0,
     timestamp: new Date().toISOString()
   });
 
   const tagCounts = {};
   db.sketches.forEach(s => {
-    if (s.rating === "good") {
+    if (ratingValue(s.rating) >= 4) {
       normalizeDna(s.dna).forEach(tag => {
         tagCounts[tag] = (tagCounts[tag] || 0) + 1;
       });
@@ -612,7 +630,14 @@ function recordRatingsAndPersist(
     });
   });
 
-  return { goodCount, badCount };
+  return {
+    ratingCounts,
+    averageRating,
+    ratedCount,
+    highRatedCount,
+    lowRatedCount,
+    neutralCount: ratingCounts[3]
+  };
 }
 
 function normalizeCompileResult(result) {
@@ -631,7 +656,7 @@ async function critiqueRatedSketches(db, generation) {
   if (!sketches.length) return;
 
   const systemPrompt = `You analyze a rated batch of WebGL 1.0 fragment shaders.
-For each shader, identify concise visual and code-level lessons. Respect the human rating; do not change it.
+For each shader, identify concise visual and code-level lessons. Ratings use a 1–5 scale; respect the human rating and do not change it.
 Return valid JSON only:
 {
   "critiques": [
@@ -686,14 +711,13 @@ function stringList(value) {
   return Array.isArray(value) ? value.map(String).map(item => item.trim()).filter(Boolean).slice(0, 5) : [];
 }
 
-async function evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion) {
+async function evolveStrategyInternal(db, generation, ratingSummary, userOpinion) {
   const prevStrategy = db.currentStrategy;
-  const successRateThisGen = (goodCount / (goodCount + badCount)) * 100 || 0;
 
   const evolutionSystemPrompt = `You are "ShaderMind", a self-reflecting generative artist agent.
 Your task is to analyze feedback from your last generation of 10 sketches, evaluate your strategy, extract updated mathematical heuristics, and output an evolved strategy guidelines document.
 
-Analyze the ratio of Good vs Bad pieces. Synthesize curator opinions.
+Analyze the full 1–5 rating distribution. A score of 3 is neutral evidence, while 4–5 indicates preference and 1–2 indicates rejection. Synthesize curator opinions.
 Rewrite your "Shader Generation Strategy" to align with demonstrated taste while maintaining artistic integrity.
 
 Your response MUST be a valid JSON object. Do not write markdown blocks:
@@ -711,9 +735,11 @@ Your response MUST be a valid JSON object. Do not write markdown blocks:
 ${prevStrategy}
 
 Last Generation (#${generation}) Performance:
-- Good pieces: ${goodCount}
-- Bad pieces: ${badCount}
-- Success rate this gen: ${successRateThisGen.toFixed(1)}%
+- Rating counts: ${JSON.stringify(ratingSummary.ratingCounts)}
+- Average rating: ${ratingSummary.averageRating}/5
+- High-rated (4–5): ${ratingSummary.highRatedCount}
+- Neutral (3): ${ratingSummary.neutralCount}
+- Low-rated (1–2): ${ratingSummary.lowRatedCount}
 
 Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 
@@ -758,14 +784,14 @@ Use the evidence counts above rather than inventing approval rates. Then output 
 
 async function autoCurateBatch(sketches, db) {
   const systemPrompt = `You are ShaderMind's autonomous aesthetic curator.
-Rate each shader "good" or "bad" against the active strategy and learned heuristics.
-Be selective: approve roughly 30-40% to maintain quality pressure.
+Rate each shader from 1 to 5 against the active strategy and learned heuristics.
+Use 1 for a strong rejection, 3 for neutral/mixed, and 5 for exceptional work.
 Favor organic motion, valid GLSL structure, and heuristic alignment.
 Reject chaotic high-frequency noise, rigid grids, and oversaturated palettes.
 
 Respond with valid JSON only:
 {
-  "ratings": { "sketch-id": "good" | "bad", ... },
+  "ratings": { "sketch-id": 1 | 2 | 3 | 4 | 5, ... },
   "opinion": "One paragraph summarizing what you approved, rejected, and what to evolve next."
 }`;
 
@@ -787,14 +813,14 @@ ${JSON.stringify(db.heuristics || [])}
 Sketches to curate:
 ${JSON.stringify(sketchSummaries, null, 2)}
 
-Rate every sketch id. Include all 10 ids in ratings.`;
+Rate every sketch id from 1 to 5. Include all 10 ids in ratings.`;
 
   const rawResponse = await runGeminiBatch(systemPrompt, userPrompt, true, "autonomous curation");
   const parsed = parseJsonFromModel(rawResponse);
 
   const ratings = {};
   sketches.forEach(s => {
-    ratings[s.id] = parsed.ratings?.[s.id] === "good" ? "good" : "bad";
+    ratings[s.id] = ratingValue(parsed.ratings?.[s.id]) || 3;
   });
 
   return {
@@ -988,10 +1014,19 @@ app.post("/api/feedback", async (req, res) => {
     return res.status(400).json({ error: "Missing generation or ratings." });
   }
 
+  const expectedSketches = Array.isArray(newSketches) && newSketches.length
+    ? newSketches
+    : (autopilot.currentBatch || []);
+  const missingRating = expectedSketches.find(sketch => ratingValue(ratings[sketch.id]) === null);
+  const invalidRating = Object.values(ratings).find(rating => ratingValue(rating) === null);
+  if (missingRating || invalidRating !== undefined) {
+    return res.status(400).json({ error: "Every shader must have a rating from 1 to 5." });
+  }
+
   autopilot.phase = "evolving";
   autopilot.lastHumanOpinion = userOpinion || null;
 
-  const { goodCount, badCount } = recordRatingsAndPersist(
+  const ratingSummary = recordRatingsAndPersist(
     db,
     generation,
     ratings,
@@ -1004,14 +1039,14 @@ app.post("/api/feedback", async (req, res) => {
   try {
     await critiqueRatedSketches(db, generation);
     db.preferenceMemory = buildPreferenceMemory(db.sketches, db.preferenceMemory);
-    const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
+    const evolution = await evolveStrategyInternal(db, generation, ratingSummary, userOpinion);
     saveDB(db);
 
     if (autopilot.currentBatch) {
       autopilot.currentBatch = autopilot.currentBatch.map(s => ({
         ...s,
         rated: true,
-        rating: ratings[s.id] || s.rating,
+        rating: ratingValue(ratings[s.id]) ?? s.rating,
         ratingSource: (Array.isArray(explicitRatingIds) ? explicitRatingIds : []).includes(s.id)
           ? "explicit"
           : "defaulted",
@@ -1030,8 +1065,10 @@ app.post("/api/feedback", async (req, res) => {
       successRate: db.successRate,
       totalSketches: db.totalSketches,
       preferenceMemory: db.preferenceMemory,
-      goodCount,
-      badCount
+      ...ratingSummary,
+      // Temporary compatibility fields for older clients.
+      goodCount: ratingSummary.highRatedCount,
+      badCount: ratingSummary.lowRatedCount
     });
   } catch (err) {
     saveDB(db);
@@ -1051,8 +1088,8 @@ app.get("/api/narrative", async (req, res) => {
   }
 
   const goodSketchesList = db.sketches
-    .filter(s => s.rating === "good")
-    .map(s => `Gen ${s.generation}: "${s.title}" (${s.dna.join(", ")})`)
+    .filter(s => ratingValue(s.rating) >= 4)
+    .map(s => `Gen ${s.generation}: "${s.title}" — ${ratingValue(s.rating)}/5 (${s.dna.join(", ")})`)
     .slice(-10);
 
   const narrativeSystemPrompt = `You are "ShaderMind", a self-reflecting AI creative coder professor.
