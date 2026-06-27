@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="index.css?v=5">
 </head>
 <body>
   <header class="site-header">
@@ -45,7 +45,7 @@
       <div class="shader-grid" id="shaderGrid"></div>
 
       <div class="empty-state" id="emptyState">
-        <p>Waiting for the first batch.</p>
+        <p>No batch yet. Add GEMINI_API_KEY to generate new art, or refresh to view saved sketches.</p>
       </div>
 
       <div class="curation-panel" id="curationPanel" hidden>
@@ -128,6 +128,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=5"></script>
 </body>
 </html>

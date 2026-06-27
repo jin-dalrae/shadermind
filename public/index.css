@@ -264,7 +264,8 @@ section {
 .shader-canvas-wrap {
   position: relative;
   width: 100%;
-  padding-bottom: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 120px;
   background: #000;
   overflow: hidden;
 }

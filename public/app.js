@@ -1,4 +1,5 @@
-import { ShaderRenderer } from "./shader-renderer.js";
+import { ShaderRenderer } from "./shader-renderer.js?v=5";
+import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=5";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -15,6 +16,7 @@ class ShaderMindUI {
     this.renderers = new Map();
     this.dialogRenderer = null;
     this.displayedGeneration = null;
+    this.displayedBatchKey = null;
     this.lastGen = -1;
     this.sketches = [];
     this.activeBatch = null;
@@ -117,6 +119,15 @@ class ShaderMindUI {
     }
   }
 
+  getLatestBatchFromLibrary() {
+    if (!this.sketches?.length) return null;
+    const latestGen = Math.max(...this.sketches.map(s => s.generation || 0));
+    const batch = this.sketches
+      .filter(s => s.generation === latestGen)
+      .sort((a, b) => a.id.localeCompare(b.id, undefined, { numeric: true }));
+    return batch.length ? { generation: latestGen, sketches: batch } : null;
+  }
+
   updateStudio(autopilot) {
     const busy = ["generating", "evolving"].includes(autopilot.phase);
     this.els.studioStatus.hidden = !busy;
@@ -127,28 +138,35 @@ class ShaderMindUI {
       this.els.statusMessage.textContent = (PHASE_LABELS[autopilot.phase] || "working…") + progress;
     }
 
-    const batch = autopilot.currentBatch;
+    const liveBatch = autopilot.currentBatch;
+    const archive = !liveBatch?.length ? this.getLatestBatchFromLibrary() : null;
+    const batch = liveBatch?.length ? liveBatch : archive?.sketches;
+    const fromArchive = Boolean(archive && !liveBatch?.length);
+
     if (!batch?.length) {
       if (!busy) {
         this.els.emptyState.hidden = false;
         this.els.curationPanel.hidden = true;
+        this.els.batchLabel.textContent = "—";
       }
       return;
     }
 
     this.els.emptyState.hidden = true;
     const gen = batch[0]?.generation;
-    const awaiting = autopilot.phase === "awaiting_human" || autopilot.awaitingHuman;
+    const awaiting = !fromArchive && (autopilot.phase === "awaiting_human" || autopilot.awaitingHuman);
+    const batchKey = `${fromArchive ? "archive" : "live"}-${gen}`;
 
     this.els.batchLabel.textContent = gen
-      ? `Gen ${gen}${awaiting ? " · your turn" : ""}`
+      ? `Gen ${gen}${awaiting ? " · your turn" : fromArchive ? " · saved batch" : ""}`
       : "—";
 
     this.els.curationPanel.hidden = !awaiting;
 
-    if (gen !== this.displayedGeneration) {
+    if (batchKey !== this.displayedBatchKey) {
+      this.displayedBatchKey = batchKey;
       this.displayedGeneration = gen;
-      this.activeBatch = batch;
+      this.activeBatch = awaiting ? batch : null;
       this.userRatings = {};
       this.compileResults = {};
       this.buildGrid(batch, awaiting);
@@ -222,14 +240,20 @@ class ShaderMindUI {
       this.els.shaderGrid.appendChild(cell);
 
       wrap.addEventListener("click", () => this.openDialog(sketch));
-
-      const renderer = new ShaderRenderer(canvas, {
-        onCompileResult: awaitingHuman
-          ? result => this.reportCompileResult(sketch.id, result)
-          : null
+      wrap.addEventListener("mousemove", (e) => {
+        const rect = wrap.getBoundingClientRect();
+        getSharedGridRenderer().setMouse(
+          (e.clientX - rect.left) / rect.width,
+          1 - (e.clientY - rect.top) / rect.height
+        );
       });
-      this.renderers.set(sketch.id, renderer);
-      renderer.compileWhenReady(sketch.glsl);
+
+      getSharedGridRenderer().register(
+        sketch.id,
+        canvas,
+        sketch.glsl,
+        awaitingHuman ? result => this.reportCompileResult(sketch.id, result) : null
+      );
     });
   }
 
@@ -342,6 +366,7 @@ class ShaderMindUI {
   }
 
   updateTimeline(state) {
+    getSharedGridRenderer().clearByPrefix("timeline-");
     const timeline = [...(state.strategyTimeline || [])].reverse().filter(t => t.generation > 0);
     this.els.timelineList.innerHTML = "";
 
@@ -375,10 +400,7 @@ class ShaderMindUI {
           const canvas = document.createElement("canvas");
           thumb.appendChild(canvas);
           thumb.addEventListener("click", () => this.openDialog(s));
-          const renderer = new ShaderRenderer(canvas);
-          renderer.compileWhenReady(s.glsl);
-          thumb.addEventListener("mouseenter", () => renderer.start());
-          thumb.addEventListener("mouseleave", () => renderer.stop());
+          getSharedGridRenderer().register(`timeline-${s.id}`, canvas, s.glsl);
           container.appendChild(thumb);
         });
       }
@@ -436,6 +458,7 @@ class ShaderMindUI {
   }
 
   clearRenderers() {
+    getSharedGridRenderer().clear();
     this.renderers.forEach(r => r.stop());
     this.renderers.clear();
   }
