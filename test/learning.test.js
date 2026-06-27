@@ -4,6 +4,7 @@ import {
   buildExampleContext,
   buildPreferenceMemory,
   extractCodeFeatures,
+  ratingValue,
   selectLearningExamples,
   shaderSimilarity
 } from "../lib/learning.js";
@@ -32,7 +33,7 @@ function sketch(overrides = {}) {
     title: "Example",
     generation: 1,
     rated: true,
-    rating: "good",
+    rating: 5,
     ratingSource: "explicit",
     dna: ["radial", "calm"],
     glsl: RADIAL_SHADER,
@@ -49,12 +50,20 @@ test("extractCodeFeatures finds understandable GLSL traits", () => {
   assert.ok(features.composition.includes("centered"));
 });
 
-test("preference memory separates supported positive and negative evidence", () => {
+test("ratingValue accepts 1–5 and maps legacy binary ratings", () => {
+  assert.equal(ratingValue(3), 3);
+  assert.equal(ratingValue("5"), 5);
+  assert.equal(ratingValue("good"), 5);
+  assert.equal(ratingValue("bad"), 1);
+  assert.equal(ratingValue(6), null);
+});
+
+test("preference memory separates high and low 1–5 ratings", () => {
   const memory = buildPreferenceMemory([
     sketch({ id: "good-1", dna: ["radial"] }),
     sketch({ id: "good-2", dna: ["radial"] }),
-    sketch({ id: "bad-1", rating: "bad", dna: ["flicker"], glsl: NOISE_SHADER }),
-    sketch({ id: "bad-2", rating: "bad", dna: ["flicker"], glsl: NOISE_SHADER })
+    sketch({ id: "low-1", rating: 1, dna: ["flicker"], glsl: NOISE_SHADER }),
+    sketch({ id: "low-2", rating: 2, dna: ["flicker"], glsl: NOISE_SHADER })
   ]);
 
   assert.ok(memory.prefer.some(item => item.rule.includes("radial")));
@@ -62,10 +71,10 @@ test("preference memory separates supported positive and negative evidence", () 
   assert.equal(memory.version, 1);
 });
 
-test("defaulted bad ratings carry less confidence than explicit choices", () => {
+test("defaulted low ratings carry less confidence than explicit choices", () => {
   const memory = buildPreferenceMemory([
-    sketch({ id: "implicit-1", rating: "bad", ratingSource: "defaulted", dna: ["untouched"] }),
-    sketch({ id: "implicit-2", rating: "bad", ratingSource: "defaulted", dna: ["untouched"] })
+    sketch({ id: "implicit-1", rating: 1, ratingSource: "defaulted", dna: ["untouched"] }),
+    sketch({ id: "implicit-2", rating: 1, ratingSource: "defaulted", dna: ["untouched"] })
   ]);
 
   assert.ok(!memory.avoid.some(item => item.rule.includes("untouched")));
@@ -99,6 +108,18 @@ test("missing compile evidence remains eligible but is not treated as confirmed"
   const examples = selectLearningExamples(db, { dna: ["radial"] }, { currentGeneration: 2 });
 
   assert.equal(examples[0].id, "legacy");
+});
+
+test("legacy good and bad ratings remain readable", () => {
+  const memory = buildPreferenceMemory([
+    sketch({ id: "legacy-good-1", rating: "good", dna: ["legacy-favorite"] }),
+    sketch({ id: "legacy-good-2", rating: "good", dna: ["legacy-favorite"] }),
+    sketch({ id: "legacy-bad-1", rating: "bad", dna: ["legacy-reject"] }),
+    sketch({ id: "legacy-bad-2", rating: "bad", dna: ["legacy-reject"] })
+  ]);
+
+  assert.ok(memory.prefer.some(item => item.rule.includes("legacy-favorite")));
+  assert.ok(memory.avoid.some(item => item.rule.includes("legacy-reject")));
 });
 
 test("example context obeys its hard character budget", () => {

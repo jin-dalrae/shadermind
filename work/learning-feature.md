@@ -11,7 +11,7 @@ Use human ratings and working GLSL as learning signals for future generations.
 Each new batch should learn from:
 
 - a small set of relevant, high-rated shader examples;
-- concise preference rules distilled from good and bad results;
+- concise preference rules distilled from 1–5 ratings;
 - technical outcomes such as compile success or failure;
 - an explicit novelty requirement that prevents near-copies.
 
@@ -33,7 +33,7 @@ The current path has important limits:
 - compile success is visible in the browser but is not persisted;
 - critique exists at the batch level, not per sketch;
 - there is no similarity check or diversity guard;
-- unrated sketches default to `bad`, so implicit and explicit negative feedback are indistinguishable.
+- unrated sketches defaulted to `bad`, losing useful preference detail.
 
 This plan replaces the current remix behavior; it does not add a second competing memory path.
 
@@ -76,6 +76,7 @@ Extend each sketch in `database.json` without requiring MongoDB first:
   // Existing fields remain unchanged.
   generationFocus: String,
   prompt: String,
+  rating: 1 | 2 | 3 | 4 | 5 | null,
   ratingSource: "explicit|defaulted|autonomous|null",
   compile: {
     success: Boolean | null,
@@ -118,9 +119,15 @@ All new fields must be optional so existing `database.json` records continue to 
 
 ### Human rating
 
-Keep `good` and `bad` for the first release. Record whether `bad` was explicitly selected or applied as the current submit default.
+Use a required 1–5 rating for every shader:
 
-This prevents an untouched card from carrying the same learning weight as an intentional rejection.
+- `1` — strong dislike;
+- `2` — dislike;
+- `3` — neutral or mixed;
+- `4` — like;
+- `5` — strong like.
+
+Do not invent scores for unrated shaders. Existing `good` and `bad` archive records map to `5` and `1` for backward compatibility.
 
 ### Compile result
 
@@ -146,7 +153,7 @@ Requirements:
 - reports are idempotent;
 - errors are truncated and sanitized;
 - temporary zero-size-canvas retries are not stored as compile failures;
-- compile failure excludes a shader from positive example retrieval, even if it was rated `good`.
+- compile failure excludes a shader from positive example retrieval, even if it was rated `4` or `5`.
 
 ### Per-sketch critique
 
@@ -162,7 +169,7 @@ Add `selectLearningExamples(db, targetConcept, options)` as the only entry point
 
 A positive example must:
 
-- have `rating === "good"`;
+- have a rating of `4` or `5`;
 - not have `compile.success === false`;
 - contain usable GLSL;
 - not be the current sketch or batch;
@@ -183,7 +190,7 @@ score =
 
 Notes:
 
-- explicit `good` feedback receives more weight than autonomous feedback;
+- explicit human feedback receives more weight than autonomous feedback;
 - missing compile data is neutral, not equal to success;
 - repeated examples receive a cooldown penalty;
 - final selection uses maximal marginal relevance so the chosen examples are relevant to the target but different from one another.
@@ -217,12 +224,12 @@ Do not assemble snippets from different shaders automatically in the first versi
 
 ## 8. Preference Distillation
 
-Replace unsupported approval-rate prose with counts derived from stored evidence.
+Replace unsupported approval-rate prose with rating averages derived from stored evidence.
 
 After each rated batch:
 
-1. combine ratings, critiques, DNA tags, and code features;
-2. compare positive and negative occurrences;
+1. combine 1–5 ratings, critiques, DNA tags, and code features;
+2. compare average ratings and support for each pattern;
 3. update a small set of `prefer` and `avoid` rules;
 4. attach support and confidence values;
 5. pass the evidence summary into strategy evolution.
@@ -231,10 +238,10 @@ Example:
 
 ```text
 Prefer:
-- Slow sinusoidal motion with centered radial structure (6 good / 8 rated)
+- Slow sinusoidal motion with centered radial structure (4.4/5 average, 8 rated)
 
 Avoid:
-- High-frequency time modulation that produces flicker (1 good / 7 rated)
+- High-frequency time modulation that produces flicker (1.7/5 average, 7 rated)
 ```
 
 Keep the active prompt block short: at most five preference rules and three avoid rules. Historical rules remain in storage but are not all injected.
@@ -315,7 +322,7 @@ Use a local deterministic comparison first. Do not require another model call so
 
 - [x] Extend `DEFAULT_DB` and sketch normalization for optional learning fields.
 - [x] Save generation focus and prompt context with every sketch.
-- [x] Distinguish explicit from defaulted ratings.
+- [x] Capture required explicit 1–5 ratings.
 - [x] Persist final WebGL compile results.
 - [x] Add one batched per-sketch critique call after feedback.
 
@@ -330,7 +337,7 @@ Use a local deterministic comparison first. Do not require another model call so
 
 ### Phase 3 — Rule memory
 
-- [x] Derive preference evidence from good and bad sketches.
+- [x] Derive preference evidence from 1–5 ratings.
 - [x] Store versioned `preferenceMemory`.
 - [x] Limit active rules by confidence and support.
 - [x] Feed evidence-backed rules into metadata, GLSL, and evolution prompts.
@@ -387,12 +394,12 @@ Expose only a compact summary in existing API responses. Keep enough detail in s
 
 Add Node tests for pure learning helpers before testing Gemini behavior:
 
-- candidate filtering excludes bad and known-broken shaders;
+- candidate filtering excludes ratings below 4 and known-broken shaders;
 - retrieval favors relevant tags without returning near-duplicate examples;
 - missing compile data remains eligible but neutral;
 - context builders obey hard size limits;
 - old database records load with defaults;
-- explicit and defaulted ratings receive different confidence weights;
+- human and autonomous ratings receive different confidence weights;
 - novelty checks catch copied code and allow structurally distinct shaders;
 - 5–3–2 generation preserves eight exploit/directive and two explore slots.
 
@@ -401,7 +408,7 @@ Use fixed fixture sketches so ranking and similarity tests are deterministic.
 For an end-to-end smoke test:
 
 1. generate a batch;
-2. rate a known subset good and bad;
+2. rate every shader from 1 to 5;
 3. confirm compile and critique evidence is saved;
 4. generate the next batch;
 5. confirm only relevant examples are injected;
