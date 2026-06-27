@@ -1,12 +1,12 @@
 # ShaderMind
 
-**Everyday shader sketches — each one a small step toward what you love.**
+**An agent that draws. You become the artist.**
 
-ShaderMind is a continual-learning studio for GLSL: generate a batch, rate what you feel, and the agent remixes the last good work with **one change at a time** — not full reinventions. Over generations it learns what you wanted to see and steers the next sketches there.
+ShaderMind is a drawing tool — but the hand holding the pen is an agent. It generates live GLSL sketches; **you** steer with 1–5 ratings and short notes. It learns **your** taste over time and nudges each new batch a little closer to what you love and wanted to see.
 
-Inspired by [Zach Lieberman's daily code sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d): *learn from everyday practice, change a bit from the previous one, until you reach the work you love.* The **3,650** sketch count is a north-star metaphor for that arc — not a calendar.
+Like a sketchbook that remembers: everyday shaders, **small changes from the last**, not reinventions. Inspired by [Zach Lieberman's daily code sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d). The **3,650** count is a north-star metaphor for that practice — not a calendar.
 
-Preference memory and the strategy genome follow [PLUS](https://arxiv.org/abs/2507.13579): taste as **readable text** that sharpens with every batch.
+Under the hood, preference memory follows [PLUS](https://arxiv.org/abs/2507.13579): your taste compressed into readable text that sharpens every batch.
 
 **Hackathon:** 2026 AI Engineer World's Fair · Continual Learning track
 
@@ -26,10 +26,10 @@ Preference memory and the strategy genome follow [PLUS](https://arxiv.org/abs/25
 
 | Problem | ShaderMind's answer |
 |---|---|
-| RLHF treats taste as one shared reward model | **Heuristic memory** + **preference memory** + **strategy genome** — text you can read and audit |
-| Prompt → image, then forget | **Continual learning loop** across generations |
-| Black-box scores | 1–5 ratings, reflection notes, evolution timeline |
-| Generic shader toys | Stateful agent: plans → codes → curates → evolves → repeats |
+| AI art does the creating *for* you | **You** curate; the **agent** draws — you grow into the artist |
+| One-size-fits-all taste | Learns **your** preference memory + strategy genome |
+| Prompt → image, then forget | Everyday sketches; each batch changes a bit from the last |
+| Opaque tools | 1–5 ratings, reflection log, evolution timeline you can read |
 
 ---
 
@@ -41,7 +41,7 @@ Preference memory and the strategy genome follow [PLUS](https://arxiv.org/abs/25
 4. Scroll **Evolution** — generation milestones with thumbnails of high-rated work.
 5. Click **Explain artistic evolution** — the agent narrates its own arc.
 
-The artifact isn't one pretty shader. It's the **slow drift toward what you love** — sketch by sketch, change by change.
+The artifact isn't one pretty shader. It's **you**, learning taste through a tool that draws — sketch by sketch, change by change.
 
 ---
 

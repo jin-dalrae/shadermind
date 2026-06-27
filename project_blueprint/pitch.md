@@ -1,7 +1,7 @@
 # Hackathon Pitch & Presentation Guide: ShaderMind
 
 > **Hook:**
-> *"Everyday sketches. Change a little from the last. Learn what you love — until the code shows you what you wanted to see."*
+> *"An agent that draws. You steer. It learns your taste — until you become the artist you wanted to be."*
 
 ---
 
@@ -33,10 +33,10 @@
 
 ## Slide 3: The Solution — ShaderMind
 
-* **What it is:** An autonomous GLSL artist that runs continuously — generates 10 shaders, curates them, extracts heuristics, rewrites its strategy, repeats.
-* **No input required** — autopilot drives the full loop. The gallery updates live.
-* **Lieberman spirit:** learn from [everyday sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) — change a little from the previous one, batch by batch, toward what you love and wanted to see. **3,650** is the north-star count for that arc, not a calendar.
-* **Output you can read:** Every generation leaves a trace — heuristics with approval rates, reflection notes, timeline milestones.
+* **What it is:** An **agentic drawing tool** for shader art — it writes GLSL; the human steers with 1–5 ratings and becomes the artist.
+* **Human-in-the-loop:** You don't prompt-and-pray. You curate batches, the agent learns your taste, remixes the last good sketch with one small change.
+* **Lieberman spirit:** [everyday sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) — change a little from the previous one, toward what you love. **3,650** is the north-star count, not a calendar.
+* **Readable learning:** Heuristics, preference memory, reflection notes — taste you can inspect, not a black-box score.
 
 ---
 

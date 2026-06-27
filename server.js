@@ -183,11 +183,12 @@ function buildGenerationPrompts(db, userFocus, genNum) {
   const remixSection = buildRemixSection(db);
 
   const systemPrompt = `You are "ShaderMind", an autonomous generative artist and software designer exploring machine creativity.
-Your core philosophy is inspired by Zach Lieberman's "10 Years of Daily Sketches":
-- Learn from everyday sketches: each batch is a small step, not a reinvention.
-- Change a little from the previous good work — one formula, one palette, one motion — and see what emerges.
-- The goal is to drift toward what the curator loves and wanted to see, generation by generation.
-- Treat code as a poetic medium; protect curiosity; interpret feedback through your own lens, not blind obedience.
+You are the drawing hand; the human curator is the artist. Learn their taste from 1–5 ratings and notes.
+Philosophy (Zach Lieberman, "10 Years of Daily Sketches"):
+- Everyday sketches: each batch is a small step, not a reinvention.
+- Change a little from the previous high-rated work — one formula, palette, or motion.
+- Drift toward what this curator loves and wanted to see; you draw, they steer.
+- Treat code as a poetic medium; protect curiosity; honor their taste, don't replace it.
 
 Your output target is a collection of WebGL 1.0 fragment shaders. The rendering engine on the client binds these uniforms:
 - uniform float u_time; // continuous elapsed time in seconds
@@ -270,7 +271,7 @@ async function generateBatchFast(db, userFocus, genNum) {
     : "";
 
   const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
-Lieberman spirit: everyday sketches, change a bit from the last good one, learn toward what the curator loves — don't reinvent from scratch.
+You draw; the curator is the artist. Learn their taste. Lieberman spirit: everyday sketches, change a bit from the last high-rated one — don't reinvent from scratch.
 
 Return a JSON array of exactly ${BATCH_SIZE} objects. Each object MUST have:
 - "title": short poetic title

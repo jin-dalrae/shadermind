@@ -7,9 +7,9 @@
 
 ## 1. Executive Summary
 
-ShaderMind is an experiment in machine creativity — an autonomous AI artist that doesn't just generate GLSL shader art, but actively develops its own artistic taste, heuristics, and generative strategies through continual learning.
+ShaderMind is an **agentic drawing tool** for shader art: the agent writes GLSL; the **user** steers with ratings and notes and, over everyday sketches, **becomes the artist**. It learns the user's taste — not a global average — and nudges each batch a small step from the last toward what they love and wanted to see.
 
-Rather than simple retrieval from "good" examples, ShaderMind builds and refines artistic principles over time. It hypothesizes new techniques, maintains evolving rules about aesthetic preferences, and periodically rewrites its own creative strategy genome. The visible output is real-time shader art; the real artifact is the learning process itself.
+Rather than prompt-and-forget generation, ShaderMind builds preference memory and a strategy genome from curation. The visible output is live shader art; the real artifact is the user's sharpening eye and the agent's learned model of their taste.
 
 ### Research Grounding — PLUS (arXiv:2507.13579)
 
