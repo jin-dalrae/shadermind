@@ -21,7 +21,7 @@ This document explains **what the LEARNING branch adds**, **how learning works e
 1. Replaced Good/Bad with **1–5 ratings** (all 10 required)
 2. Added **code-aware learning** in `lib/learning/`
 3. Added **SQLite + JSON mirror** in `storage/`
-4. Fixed **Chrome WebGL context exhaustion** via shared grid renderer
+4. Fixed **Chrome WebGL context exhaustion** via shared grid renderer — **grid still black on Chrome; bug open**
 5. Documented everything in this file + [AGENTS.md](./AGENTS.md)
 
 **Immediate next steps** (if no other direction from user):
@@ -30,6 +30,27 @@ This document explains **what the LEARNING branch adds**, **how learning works e
 - Expand tests or implement snippet memory per [work/learning-feature.md](./work/learning-feature.md)
 
 **Run tests:** `npm test` (covers retrieval, memory, similarity, features in `test/learning.test.js`)
+
+---
+
+## Known open bug: grid rendering (STILL FAILING)
+
+🔴 **Chrome studio grid shows black/empty cells** — not fixed as of 2026-06-27.
+
+Full write-up: [AGENTS.md § Known open bug: grid rendering](./AGENTS.md#known-open-bug-grid-rendering-still-failing)
+
+**Summary for agents picking up render work:**
+
+| | |
+|---|---|
+| **Broken** | Live 10-cell grid + likely timeline thumbnails in Chrome |
+| **May work** | Cursor embedded browser; possibly dialog fullscreen (`shader-renderer.js`) |
+| **Unaffected** | Generation, 1–5 curation, learning loop, DB persistence |
+| **Attempted fix** | `public/shared-grid-renderer.js` — single WebGL context, `readPixels` blit, `?v=5` cache bust |
+| **User verified** | Still black after incognito + `/?v=5` |
+| **Next step** | Debug overlay on cells, or Option B: `<img>` snapshots instead of live WebGL grid |
+
+Do not close this issue without human confirmation on Chrome.
 
 ---
 
@@ -369,7 +390,7 @@ Disables retrieval, similarity retry, and preference injection. Strategy/heurist
 - Similarity check + novelty retry
 - `learningContext` on generated sketches
 - SQLite storage + JSON mirror
-- Chrome-safe shared grid renderer
+- Chrome-safe shared grid renderer — **implemented but grid still black on Chrome (open bug)**
 - Archive batch display when autopilot idle
 
 ### ⏳ Planned (see [`work/learning-feature.md`](./work/learning-feature.md))
@@ -404,7 +425,7 @@ for s in json.load(sys.stdin):
 CODE_AWARE_LEARNING=false
 ```
 
-**Chrome render issues:** shared single-context renderer in `public/shared-grid-renderer.js`. Use `http://localhost:8080/?v=5`, incognito, or confirm hardware acceleration. If still broken, see Option B (img blob per cell) in [work/learning-feature.md](./work/learning-feature.md) or [AGENTS.md](./AGENTS.md#operational-gotchas).
+**Chrome render (OPEN BUG):** Grid thumbnails fail on Chrome despite `shared-grid-renderer.js`. Full details: [AGENTS.md § Known open bug](./AGENTS.md#known-open-bug-grid-rendering-still-failing). Do not assume `/?v=5` fixes it.
 
 ---
 

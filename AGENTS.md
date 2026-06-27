@@ -27,15 +27,15 @@ Guide for AI agents and contributors working on this repository.
 - 1–5 human curation (all 10 shaders required before submit)
 - Compile evidence + per-sketch critique after feedback
 - SQLite + JSON mirror (`storage/`, `USE_SQLITE=true` in `.env.example`)
-- Chrome-safe shared grid renderer (`public/shared-grid-renderer.js`, cache bust `?v=5`)
+- Chrome shared grid renderer attempt (`public/shared-grid-renderer.js`, `?v=5`) — **grid still black on Chrome; open bug**
 - Archive batch fallback when autopilot idle (`public/app.js`)
 - Agent docs: this file + `agents-learning-model.md`
 
 **Known open issues / next work:**
 | Priority | Item | Where |
 |----------|------|-------|
+| High | **Grid render still broken on Chrome** — black cells despite shared renderer fix; see [§ Known open bug: grid rendering](#known-open-bug-grid-rendering-still-failing) | `public/shared-grid-renderer.js` |
 | High | Open PR: merge `LEARNING` → `main` | GitHub |
-| Medium | Chrome black boxes — fix may need verification on user's machine; try `/?v=5`, incognito, HW acceleration | `shared-grid-renderer.js` |
 | Medium | Snippet-level memory (not just full-shader examples) | `work/learning-feature.md` §8 |
 | Medium | `LEARNING_MODE` human \| autonomous \| hybrid | `work/implementation.md` |
 | Medium | Expand test coverage beyond `test/learning.test.js` | `npm test` |
@@ -52,6 +52,77 @@ npm test               # learning unit tests
 ```
 
 **Do not** run `cp .env.example .env` if `.env` already has a key — it wipes the key. Restart server after any `.env` edit.
+
+---
+
+## Known open bug: grid rendering (STILL FAILING)
+
+**Status:** 🔴 **Open — not fixed on Chrome in production use** (as of 2026-06-27)
+
+The **10-shader studio grid** can show **black/empty cells** in **Google Chrome** even after the LEARNING-branch renderer rewrite. Generation, API, curation, and learning all work — only **live grid thumbnails** are unreliable on Chrome.
+
+### Symptoms
+
+- Studio `#shaderGrid` cells are black or blank
+- No animated shader art in the 10-cell grid during `awaiting_human` or saved-batch view
+- May work in **Cursor's embedded browser** or other engines while failing in Chrome
+- Fullscreen **dialog** view (`shader-renderer.js`) may still work for individual cells — verify separately
+
+### Root causes identified (original `main` grid)
+
+1. **WebGL context limit** — one context per cell × 10 exceeded Chrome's ~8 context cap → `WEBGL_context_lost`
+2. **Canvas resize every frame** — resizing WebGL backing store invalidates context
+3. **`drawImage(webglCanvas)`** — flaky in Chrome when copying WebGL → 2D canvas
+4. **Stale cached JS** — Chrome served old `app.js` without shared renderer
+
+### Fixes attempted on LEARNING (`cb55114`, cache bust `?v=5`)
+
+| Change | File |
+|--------|------|
+| Single shared WebGL context for all grid cells | `public/shared-grid-renderer.js` |
+| Fixed 512×512 offscreen buffer (never resize WebGL canvas) | same |
+| Copy via `readPixels` + `putImageData` instead of `drawImage` | same |
+| `aspect-ratio: 1/1` on `.shader-canvas-wrap` | `public/index.css` |
+| Lazy init after DOM ready | `shared-grid-renderer.js` |
+| Cache bust + no-store headers | `index.html`, `app.js` imports, `server.js` |
+
+**User report after these fixes:** Chrome (including incognito + `/?v=5`) **still shows black boxes**.
+
+### Workarounds tried (insufficient)
+
+- `http://localhost:8080/?v=5`
+- Chrome incognito
+- Hardware acceleration check suggested — not confirmed fixed
+
+### What still works without grid render
+
+- Gemini batch generation and autopilot loop
+- 1–5 curation submit → `preferenceMemory` + strategy evolution
+- `database.json` / SQLite persistence — GLSL is saved
+- Compile reporting API (`POST /api/sketches/:id/compile-result`)
+- Reading GLSL in dialog if dialog renderer works
+- Timeline may also use shared renderer — likely broken too if grid is
+
+### Debug checklist for next agent
+
+1. Open Chrome DevTools → **Console** — look for `SharedGridRenderer: WebGL unavailable` or `WEBGL_context_lost`
+2. Confirm loaded scripts: Network tab shows `app.js?v=5`, `shared-grid-renderer.js?v=5`
+3. In console: `document.querySelector('#shaderGrid canvas')` — check dimensions non-zero
+4. Test dialog click on a cell — if dialog renders but grid doesn't, bug is in `blitGlTo2d` / grid loop only
+5. Test with `chrome://settings/system` → hardware acceleration on/off
+6. Compare Chrome vs Safari/Firefox vs Cursor browser on same URL
+
+### Recommended next fixes (not implemented)
+
+**Option A — diagnose further:** Add visible debug overlay on cells (`WebGL ok`, program compile error, context lost) instead of silent black fill.
+
+**Option B — server-side or static snapshots:** Render grid thumbnails to PNG/data-URL on server or once at compile time; grid shows `<img>` not live WebGL. Removes Chrome WebGL grid dependency entirely.
+
+**Option C — revert grid to 2D placeholder:** Show DNA title + "Open to view" until render path is stable; keep live render only in dialog.
+
+**Option D — WebGL2 or OffscreenCanvas worker:** Heavier refactor; only if A–C fail.
+
+Do **not** mark this bug resolved in docs until verified on Chrome by a human curator seeing animated grid cells.
 
 ---
 
@@ -263,7 +334,7 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 | No `README.md` | Low | Onboarding relies on AGENTS.md + agents-learning-model.md |
 | `database.json` in git | Medium | Grows with every generation; bloats repo |
 | Full sketch load on client | Medium | `/api/sketches` returns entire archive |
-| Chrome grid render | Medium | Shared renderer fix landed; verify on Chrome with `/?v=5` |
+| Chrome grid render | **High — still failing** | Fix landed in `shared-grid-renderer.js` but black cells persist on Chrome; see [Known open bug: grid rendering](#known-open-bug-grid-rendering-still-failing) |
 | No auth / rate limits | Low | Acceptable for hackathon demo |
 | DO app.yaml repo placeholder | Low | `your-org/shadermind` needs updating |
 
@@ -274,7 +345,7 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 3. **`cp .env.example .env` overwrites existing key** — edit `.env` in place instead.
 4. **GLSL sometimes stored with markdown fences** — `decodeGlslField()` and `sanitizeGlslSource()` handle this.
 5. **Generation takes 1–3 minutes** — 10 Gemini calls; UI shows `generationProgress`.
-6. **Chrome may show black shader cells** — use `http://localhost:8080/?v=5`; grid uses one shared WebGL context via `shared-grid-renderer.js`.
+6. **Chrome grid may show black shader cells** — **known open bug**; shared renderer did not fully fix it. See [§ Known open bug: grid rendering](#known-open-bug-grid-rendering-still-failing). Dialog view may still work.
 7. **Empty studio when idle** — app falls back to latest saved batch from DB; label shows `Gen N · saved batch`.
 
 ---
