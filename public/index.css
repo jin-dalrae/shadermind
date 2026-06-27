@@ -749,6 +749,7 @@ section {
 .dialog-canvas-wrap {
   position: relative;
   width: 100%;
+  min-height: 280px;
   aspect-ratio: 16 / 10;
   max-height: min(52vh, 480px);
   background: #0a0a0a;

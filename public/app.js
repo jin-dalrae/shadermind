@@ -1,4 +1,4 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=8";
+import { ShaderRenderer } from "./shader-renderer.js?v=9";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -15,6 +15,9 @@ class ShaderMindUI {
     this.renderers = new Map();
     this.timelineRenderers = [];
     this.dialogRenderer = null;
+    this.dialogReparent = null;
+    this.dialogOwnedRenderer = false;
+    this.suspendedGridIds = [];
     this.displayedGeneration = null;
     this.displayedBatchKey = null;
     this.lastGen = -1;
@@ -621,11 +624,68 @@ class ShaderMindUI {
     }
   }
 
-  openDialog(sketch) {
-    if (this.dialogRenderer) {
-      this.dialogRenderer.destroy();
-      this.dialogRenderer = null;
+  restoreDialogCanvas() {
+    if (!this.dialogReparent) return;
+
+    const { gridWrap, gridCanvas, placeholder, anchor, renderer } = this.dialogReparent;
+    const dialogWrap = placeholder.parentElement;
+    if (gridCanvas.parentElement === dialogWrap) {
+      gridWrap.insertBefore(gridCanvas, anchor);
     }
+    placeholder.hidden = false;
+    renderer?.bindUi({ errorEl: null, loadingEl: null, hintEl: null });
+    renderer?.relayout();
+    this.dialogReparent = null;
+  }
+
+  suspendGridRenderers() {
+    this.suspendedGridIds = [];
+    for (const [id, renderer] of this.renderers) {
+      if (!renderer.isRunning() && !renderer.gl) continue;
+      renderer.destroy();
+      this.suspendedGridIds.push(id);
+    }
+  }
+
+  resumeGridRenderers() {
+    if (!this.suspendedGridIds.length || !this.activeBatch?.length) {
+      this.suspendedGridIds = [];
+      return;
+    }
+    for (const id of this.suspendedGridIds) {
+      const renderer = this.renderers.get(id);
+      const sketch = this.activeBatch.find(s => s.id === id);
+      if (renderer && sketch?.glsl) {
+        renderer.compileWhenReady(sketch.glsl);
+      }
+    }
+    this.suspendedGridIds = [];
+  }
+
+  disposeDialogRenderer() {
+    this.restoreDialogCanvas();
+    if (this.dialogOwnedRenderer && this.dialogRenderer) {
+      this.dialogRenderer.destroy();
+    }
+    this.dialogRenderer = null;
+    this.dialogOwnedRenderer = false;
+    this.resumeGridRenderers();
+  }
+
+  waitForDialogOpen() {
+    return new Promise((resolve) => {
+      if (this.els.shaderDialog.open) {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+        return;
+      }
+      this.els.shaderDialog.addEventListener("open", () => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      }, { once: true });
+    });
+  }
+
+  openDialog(sketch) {
+    this.disposeDialogRenderer();
 
     const dna = Array.isArray(sketch.dna) ? sketch.dna : [];
     this.els.dialogEyebrow.textContent = `Gen ${sketch.generation} · ${sketch.type || "sketch"}`;
@@ -640,28 +700,57 @@ class ShaderMindUI {
     this.els.dialogError.textContent = "";
     this.els.dialogLoading.hidden = false;
     this.els.dialogHint.hidden = true;
+    this.els.dialogCanvas.hidden = false;
 
     this.els.shaderDialog.showModal();
 
-    const glsl = sketch.glsl || "";
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
-          errorEl: this.els.dialogError,
-          loadingEl: this.els.dialogLoading,
-          hintEl: this.els.dialogHint
-        });
-        this.dialogRenderer.compileWhenReady(glsl);
+    const dialogWrap = this.els.dialogCanvas.parentElement;
+    const gridRenderer = this.renderers.get(sketch.id);
+    const gridCell = this.els.shaderGrid.querySelector(`[data-id="${sketch.id}"]`);
+    const gridWrap = gridCell?.querySelector(".shader-canvas-wrap");
+    const gridCanvas = gridWrap?.querySelector("canvas");
+    const gridErr = gridWrap?.querySelector(".shader-error");
+
+    if (gridRenderer?.isRunning() && gridCanvas && gridWrap) {
+      this.dialogReparent = {
+        sketchId: sketch.id,
+        gridWrap,
+        gridCanvas,
+        placeholder: this.els.dialogCanvas,
+        anchor: gridErr || null,
+        renderer: gridRenderer
+      };
+      this.els.dialogCanvas.hidden = true;
+      dialogWrap.insertBefore(gridCanvas, this.els.dialogLoading);
+      gridRenderer.bindUi({
+        errorEl: this.els.dialogError,
+        loadingEl: this.els.dialogLoading,
+        hintEl: this.els.dialogHint
       });
+      this.dialogRenderer = gridRenderer;
+      this.dialogOwnedRenderer = false;
+      this.els.dialogLoading.hidden = true;
+      this.els.dialogHint.hidden = false;
+      requestAnimationFrame(() => gridRenderer.relayout());
+      return;
+    }
+
+    const glsl = sketch.glsl || "";
+    this.suspendGridRenderers();
+    this.waitForDialogOpen().then(() => {
+      this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
+        errorEl: this.els.dialogError,
+        loadingEl: this.els.dialogLoading,
+        hintEl: this.els.dialogHint
+      });
+      this.dialogOwnedRenderer = true;
+      this.dialogRenderer.compileWhenReady(glsl);
     });
   }
 
   closeDialog() {
+    this.disposeDialogRenderer();
     this.els.shaderDialog.close();
-    if (this.dialogRenderer) {
-      this.dialogRenderer.destroy();
-      this.dialogRenderer = null;
-    }
   }
 
   clearTimelineRenderers() {

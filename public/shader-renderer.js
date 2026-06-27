@@ -1,5 +1,5 @@
-import { patchGlslForWebGL } from "./glsl-patch.js?v=8";
-import { acquireWebGLSlot } from "./webgl-queue.js?v=8";
+import { patchGlslForWebGL } from "./glsl-patch.js?v=9";
+import { acquireWebGLSlot } from "./webgl-queue.js?v=9";
 
 /**
  * ShaderRenderer — WebGL 1.0 quad renderer for GLSL ES fragment shaders.
@@ -136,7 +136,10 @@ export class ShaderRenderer {
     this.error = null;
     this.hideError();
 
-    if (!this.isLayoutReady()) return false;
+    if (!this.isLayoutReady()) {
+      this.error = this.error || "Canvas not ready (zero size).";
+      return false;
+    }
 
     const gen = ++this.compileGeneration;
     const hasGL = await this.ensureGL();
@@ -184,10 +187,23 @@ export class ShaderRenderer {
     return true;
   }
 
+  bindUi({ errorEl, loadingEl, hintEl } = {}) {
+    if (errorEl !== undefined) this.errorEl = errorEl;
+    if (loadingEl !== undefined) this.loadingEl = loadingEl;
+    if (hintEl !== undefined) this.hintEl = hintEl;
+  }
+
   setUiState(state) {
     if (this.loadingEl) this.loadingEl.hidden = state !== "loading";
     if (this.hintEl) this.hintEl.hidden = state !== "running";
     if (this.errorEl) this.errorEl.hidden = state !== "error";
+  }
+
+  relayout() {
+    if (!this.gl || !this.program) return;
+    const { width, height } = this.ensureCanvasSize();
+    this.gl.viewport(0, 0, width, height);
+    this.render();
   }
 
   compileWhenReady(fragmentShaderSource) {
