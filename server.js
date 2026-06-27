@@ -271,6 +271,12 @@ Return a JSON array of exactly ${BATCH_SIZE} objects. Each object MUST have:
 
 Distribution: ${evolutionary} evolutionary, ${directive} directive, ${mutation} mutation.
 
+VISUAL DIVERSITY (critical — not optional):
+- Each shader MUST look visually distinct from the others in the batch.
+- FORBIDDEN: a lone smoothstep circle/blob on black with only a sin pulse (lazy placeholder).
+- REQUIRED: fill the frame with pattern/motion — use polar UV, hash noise, FBM, ripples, domain warp, cosine palette, or mouse-reactive flow.
+- evolutionary = remix ONE element from a seed; directive = curator focus; mutation = one bold new formula.
+
 GLSL ES 1.0 rules (every shader must compile):
 - precision mediump float; at top
 - void main() { gl_FragColor = vec4(...); }

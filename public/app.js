@@ -1,4 +1,4 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=9";
+import { ShaderRenderer } from "./shader-renderer.js?v=10";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -112,24 +112,34 @@ class ShaderMindUI {
         fetch("/api/sketches?limit=200")
       ]);
 
-      const state = await stateRes.json();
       const autopilot = await autopilotRes.json();
-      const sketchData = await sketchesRes.json();
+      let state = { generationCount: 0, successRate: 0, totalSketches: 0, strategyTimeline: [], heuristics: [], currentStrategy: "" };
+      if (stateRes.ok) {
+        state = await stateRes.json();
+      }
+      let sketchData = [];
+      if (sketchesRes.ok) {
+        sketchData = await sketchesRes.json();
+      }
       this.sketches = Array.isArray(sketchData) ? sketchData : (sketchData.items || []);
 
+      this.els.autopilotPill.classList.remove("is-error");
       this.updateHeader(state, autopilot);
       this.updateStudio(autopilot, state);
-      this.updateReflection(state);
-      this.updateMind(state);
-
-      const fp = this.timelineFingerprint(state);
-      if (fp !== this.timelineKey) {
-        this.timelineKey = fp;
-        this.updateTimeline(state);
+      if (stateRes.ok) {
+        this.updateReflection(state);
+        this.updateMind(state);
       }
 
-      if (state.generationCount !== this.lastGen) {
-        this.lastGen = state.generationCount;
+      if (stateRes.ok) {
+        const fp = this.timelineFingerprint(state);
+        if (fp !== this.timelineKey) {
+          this.timelineKey = fp;
+          this.updateTimeline(state);
+        }
+        if (state.generationCount !== this.lastGen) {
+          this.lastGen = state.generationCount;
+        }
       }
 
       this.seedThumbnailBackfill();
