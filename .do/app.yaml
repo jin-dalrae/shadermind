@@ -2,7 +2,7 @@ name: shadermind
 services:
   - name: web
     github:
-      repo: your-org/shadermind
+      repo: jin-dalrae/shadermind
       branch: main
       deploy_on_push: true
     source_dir: /
@@ -31,7 +31,11 @@ services:
       - key: AUTOPILOT
         value: "true"
       - key: AUTOPILOT_INTERVAL_MS
-        value: "45000"
+        value: "0"
+      - key: GENERATION_MODE
+        value: fast
+      - key: EVOLUTION_ASYNC
+        value: "true"
       - key: CONSOLIDATION_EVERY_N
         value: "25"
       - key: PORT

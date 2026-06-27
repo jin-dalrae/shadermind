@@ -1249,6 +1249,13 @@ app.listen(PORT, "0.0.0.0", async () => {
     return;
   }
 
+  if (process.env.DO_APP_ID && !process.env.MONGODB_URI) {
+    console.warn(
+      "WARNING: MONGODB_URI is not set on App Platform — using bundled database.json. "
+      + "Local MongoDB progress will NOT appear in production. Add MONGODB_URI as an app secret."
+    );
+  }
+
   const ai = getAIConfig();
   console.log(`AI provider: DigitalOcean Inference (primary)`);
   if (ai.router) {

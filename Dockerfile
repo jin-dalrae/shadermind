@@ -6,12 +6,17 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY server.js database.json ./
+COPY lib ./lib
+COPY storage ./storage
+COPY scripts ./scripts
 COPY public ./public
 
 ENV PORT=8080
 ENV AUTOPILOT=true
-ENV AUTOPILOT_INTERVAL_MS=45000
+ENV AUTOPILOT_INTERVAL_MS=0
 ENV AUTOPILOT_SEED_CYCLES=3
+ENV GENERATION_MODE=fast
+ENV EVOLUTION_ASYNC=true
 
 EXPOSE 8080
 
