@@ -78,12 +78,19 @@ export class ShaderRenderer {
   }
 
   sanitizeGlslSource(source) {
-    if (typeof source !== "string") return source;
+    if (typeof source !== "string") return "";
     let cleaned = source.trim();
     if (cleaned.startsWith("```")) {
-      cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/, "");
+      cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/m, "");
     }
-    return cleaned.replace(/\\n/g, "\n");
+    cleaned = cleaned.replace(/\\n/g, "\n");
+    cleaned = cleaned.replace(/\bout\s+vec4\s+FragColor\s*;/g, "");
+    cleaned = cleaned.replace(/\bFragColor\s*=/g, "gl_FragColor =");
+    cleaned = cleaned.replace(/\btexture\s*\(/g, "texture2D(");
+    if (!cleaned.includes("precision")) {
+      cleaned = `precision mediump float;\n${cleaned}`;
+    }
+    return cleaned;
   }
 
   compile(fragmentShaderSource) {
@@ -170,8 +177,9 @@ export class ShaderRenderer {
 
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
       const typeName = type === gl.VERTEX_SHADER ? "Vertex" : "Fragment";
-      const infoLog = gl.getShaderInfoLog(shader);
-      this.error = `${typeName} Shader Compile Error:\n${infoLog}`;
+      const infoLog = gl.getShaderInfoLog(shader) || gl.getProgramInfoLog(shader);
+      const detail = (infoLog && infoLog.trim()) ? infoLog.trim() : "unknown error (no driver log)";
+      this.error = `${typeName} shader failed: ${detail}`;
       gl.deleteShader(shader);
       return null;
     }
@@ -256,7 +264,8 @@ export class ShaderRenderer {
     if (container) {
       const errOverlay = container.querySelector(".shader-error, .shader-error-overlay");
       if (errOverlay) {
-        errOverlay.textContent = errorMessage;
+        const short = errorMessage.length > 180 ? `${errorMessage.slice(0, 180)}…` : errorMessage;
+        errOverlay.textContent = short.replace(/\n/g, " ");
         errOverlay.classList.add("active");
       }
     }

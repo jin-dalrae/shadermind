@@ -174,8 +174,11 @@ Rules:
 - precision mediump float; at top
 - void main() { ... gl_FragColor = vec4(...); }
 - uniforms: uniform float u_time; uniform vec2 u_resolution; uniform vec2 u_mouse;
-- NEVER use GLSL ES 3.0 (no out vec4, no in vec2)
-- Keep shaders under 120 lines; complete and compilable
+- NEVER use GLSL ES 3.0 (no out vec4, no in vec2, no .u/.v swizzles — use .x/.y/.z only)
+- Define EVERY helper function you call (e.g. if you call permute(), include its full definition)
+- Use float loops (for(float i=0.0;i<4.0;i++)) not int loops when possible; max 8 iterations
+- No Shadertoy names (iTime, iResolution). No undefined identifiers.
+- Keep shaders under 100 lines; must compile in WebGL 1.0
 Strategy: ${db.currentStrategy}${rollupHint}`;
 
   const userPrompt = `Generation #${genNum}, shader #${index + 1}.
@@ -534,6 +537,8 @@ async function runAutopilotCycle() {
 
   autopilot.phase = "generating";
   autopilot.lastError = null;
+  autopilot.currentBatch = null;
+  autopilot.currentGeneration = null;
 
   const { generation, sketches } = await generateBatchInternal(db, focus);
   autopilot.currentBatch = sketches.map(s => ({ ...s, rated: false, rating: null }));

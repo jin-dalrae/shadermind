@@ -15,6 +15,7 @@ class ShaderMindUI {
     this.renderers = new Map();
     this.dialogRenderer = null;
     this.displayedGeneration = null;
+    this.displayedBatchKey = null;
     this.lastGen = -1;
     this.sketches = [];
     this.activeBatch = null;
@@ -119,18 +120,32 @@ class ShaderMindUI {
 
   updateStudio(autopilot) {
     const busy = ["generating", "evolving"].includes(autopilot.phase);
-    this.els.studioStatus.hidden = !busy;
-    if (busy) {
+    const awaiting = autopilot.phase === "awaiting_human" || autopilot.awaitingHuman;
+
+    this.els.studioStatus.hidden = !busy || awaiting;
+    if (busy && !awaiting) {
       const progress = autopilot.generationProgress
         ? ` · ${autopilot.generationProgress}`
         : "";
       this.els.statusMessage.textContent = (PHASE_LABELS[autopilot.phase] || "working…") + progress;
+      this.els.batchLabel.textContent = autopilot.generationProgress
+        ? `Gen ${(autopilot.currentGeneration || this.lastGen + 1)} · generating`
+        : "Generating…";
     }
 
     const batch = autopilot.currentBatch;
     if (!batch?.length) {
-      if (!busy) {
+      if (busy && !awaiting) {
         this.els.emptyState.hidden = false;
+        this.els.emptyState.querySelector("p").textContent = autopilot.generationProgress
+          ? `Generating batch… ${autopilot.generationProgress}`
+          : "Generating batch…";
+        this.els.shaderGrid.innerHTML = "";
+        this.clearRenderers();
+        this.els.curationPanel.hidden = true;
+      } else if (!busy) {
+        this.els.emptyState.hidden = false;
+        this.els.emptyState.querySelector("p").textContent = "Waiting for the first batch.";
         this.els.curationPanel.hidden = true;
       }
       return;
@@ -138,15 +153,18 @@ class ShaderMindUI {
 
     this.els.emptyState.hidden = true;
     const gen = batch[0]?.generation;
-    const awaiting = autopilot.phase === "awaiting_human" || autopilot.awaitingHuman;
+    const batchKey = batch.map(s => s.id).join("|");
 
-    this.els.batchLabel.textContent = gen
-      ? `Gen ${gen}${awaiting ? " · your turn" : ""}`
-      : "—";
+    if (!awaiting) {
+      this.els.batchLabel.textContent = gen ? `Gen ${gen}` : "—";
+    } else {
+      this.els.batchLabel.textContent = gen ? `Gen ${gen} · your turn` : "—";
+    }
 
     this.els.curationPanel.hidden = !awaiting;
 
-    if (gen !== this.displayedGeneration) {
+    if (batchKey !== this.displayedBatchKey) {
+      this.displayedBatchKey = batchKey;
       this.displayedGeneration = gen;
       this.activeBatch = batch;
       this.userRatings = {};
@@ -292,6 +310,7 @@ class ShaderMindUI {
       this.els.userOpinion.value = "";
       this.userRatings = {};
       this.displayedGeneration = null;
+      this.displayedBatchKey = null;
       this.els.reflectionText.textContent = result.analysis || "Strategy evolved.";
       await this.poll();
     } catch (err) {
