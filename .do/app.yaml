@@ -1,0 +1,43 @@
+name: shadermind
+services:
+  - name: web
+    github:
+      repo: your-org/shadermind
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: MONGODB_URI
+        scope: RUN_TIME
+        type: SECRET
+      - key: DIGITAL_OCEAN_MODEL_ACCESS_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: MONGODB_DB
+        value: shadermind
+      - key: LEARNING_MODE
+        value: human
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      - key: GEMINI_GLSL_MODEL
+        value: gemini-2.5-pro
+      - key: GEMINI_ONLY
+        value: "true"
+      - key: ALLOW_DO_FALLBACK
+        value: "true"
+      - key: AUTOPILOT
+        value: "true"
+      - key: AUTOPILOT_INTERVAL_MS
+        value: "45000"
+      - key: CONSOLIDATION_EVERY_N
+        value: "25"
+      - key: PORT
+        value: "8080"
+    run_command: node server.js

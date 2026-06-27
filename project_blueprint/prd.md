@@ -98,7 +98,8 @@ The app is a single scrolling experience with four regions:
 | Frontend | Vanilla HTML/CSS/JS, editorial gallery UI, WebGL 1.0 renderer |
 | Backend | Node.js + Express |
 | Storage | `database.json` (strategy timeline, heuristics, sketches) |
-| AI | Google Gemini API (exclusive — all generation, curation, evolution) |
+| AI | Google Gemini API (primary); DigitalOcean Inference fallback (Llama-3.3) |
+| Deploy | DigitalOcean App Platform / Docker on port 8080 |
 
 ### Generation pipeline (Gemini-maximized)
 1. **Metadata plan** — 10 concepts as JSON (`gemini-2.5-flash`)

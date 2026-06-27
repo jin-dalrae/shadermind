@@ -1,7 +1,7 @@
 # ShaderMind — Long Memory & Learning Loop Implementation Plan
 
 > Status: **implemented** (Phase 1–5 complete; MongoDB ready when `MONGODB_URI` is set)  
-> Target: Continual Learning theme + Gemini Special Prize + Docker deploy
+> Target: Continual Learning theme + Gemini Special Prize + DigitalOcean deploy
 > Reference: [PLUS arXiv:2507.13579](https://arxiv.org/abs/2507.13579)
 
 ---
@@ -340,7 +340,8 @@ AUTOPILOT_INTERVAL_MS=45000
 
 ### Phase 6 — Deploy
 
-- [x] Docker image (`Dockerfile`) — `GEMINI_API_KEY`, optional `MONGODB_URI`
+- [x] DigitalOcean App Platform (`.do/app.yaml`) — `GEMINI_API_KEY`, `MONGODB_URI`, `DIGITAL_OCEAN_MODEL_ACCESS_KEY`
+- [x] Docker image (`Dockerfile`) as alternate deploy path
 - [ ] Atlas network access for production egress (user action)
 - [x] `database.json` dev fallback only when `MONGODB_URI` unset
 
@@ -371,7 +372,7 @@ Never commit `MONGODB_URI` to git. Use `.env` locally and platform secrets in pr
 |-----------|------------------------|
 | Continual Learning | Tiered memory + consolidation + dual-mode feedback loop |
 | Gemini Special Prize | Gemini for generate, curate, evolve, consolidate, narrate |
-| Deploy | Docker container; MongoDB Atlas for production persistence |
+| DigitalOcean | App Platform + Inference API; MongoDB Atlas for persistence |
 | Demo video | `LEARNING_MODE=human` — live curation + visible reflection |
 | Not a wrapper | Stateful WebGL playground with evolving genome |
 | 3,650 metaphor | Count toward north star; not calendar/streak mechanics |

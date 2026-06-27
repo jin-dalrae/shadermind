@@ -2,6 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { OpenAI } from "openai";
 import { loadDB, saveDB, createStorage } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
@@ -20,6 +21,8 @@ const AUTOPILOT_SEED_CYCLES = Number(process.env.AUTOPILOT_SEED_CYCLES) || 3;
 
 const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
 const GEMINI_GLSL_MODEL = process.env.GEMINI_GLSL_MODEL || "gemini-2.5-flash";
+const GEMINI_ONLY = process.env.GEMINI_ONLY !== "false";
+const ALLOW_DO_FALLBACK = process.env.ALLOW_DO_FALLBACK === "true";
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 90000;
 const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
 const LEARNING_MODE = process.env.LEARNING_MODE || "human";
@@ -28,6 +31,12 @@ const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
+
+const doApiKey = process.env.DIGITAL_OCEAN_MODEL_ACCESS_KEY || process.env.OPENAI_API_KEY;
+const doClient = new OpenAI({
+  baseURL: "https://inference.do-ai.run/v1",
+  apiKey: doApiKey || "dummy-key",
+});
 
 const autopilot = {
   running: false,
@@ -183,17 +192,42 @@ async function runGeminiBatch(systemInstruction, userPrompt, jsonMode = false, l
   });
 }
 
-async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is required.");
+async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false, { geminiOnly = GEMINI_ONLY } = {}) {
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      return await runGeminiWithRetry(systemInstruction, userPrompt, {
+        jsonMode,
+        models: [GEMINI_MODEL],
+        retriesPerModel: geminiOnly ? 4 : 2,
+        label: "generation"
+      });
+    } catch (err) {
+      if (geminiOnly) {
+        throw new Error(`Gemini-only mode: ${err.message}`);
+      }
+      console.error("Gemini invocation failed:", err.message);
+    }
   }
 
-  return runGeminiWithRetry(systemInstruction, userPrompt, {
-    jsonMode,
-    models: [GEMINI_MODEL],
-    retriesPerModel: 4,
-    label: "generation"
+  if (geminiOnly || !ALLOW_DO_FALLBACK) {
+    throw new Error("GEMINI_API_KEY is required. Set ALLOW_DO_FALLBACK=true to enable DigitalOcean fallback.");
+  }
+
+  if (!doApiKey || doApiKey === "dummy-key") {
+    throw new Error("Neither GEMINI_API_KEY nor DIGITAL_OCEAN_MODEL_ACCESS_KEY is configured in .env.");
+  }
+
+  console.log("Orchestrating AI query via DigitalOcean Inference (Llama-3.3)...");
+  const completion = await doClient.chat.completions.create({
+    model: "llama3.3-70b-instruct",
+    messages: [
+      { role: "system", content: systemInstruction },
+      { role: "user", content: userPrompt }
+    ],
+    temperature: 0.7,
+    max_completion_tokens: 4000,
   });
+  return completion.choices[0].message.content.trim();
 }
 
 function buildGenerationPrompts(db, userFocus, genNum) {
@@ -956,7 +990,7 @@ Respond with raw text only — no JSON, no markdown fences.`;
 Compose your artistic monologue.`;
 
   try {
-    const monologue = await runAIGeneration(narrativeSystemPrompt, narrativeUserPrompt, false);
+    const monologue = await runAIGeneration(narrativeSystemPrompt, narrativeUserPrompt, false, { geminiOnly: true });
     res.json({ monologue });
   } catch (err) {
     console.error("Monologue compilation failed:", err);
@@ -966,13 +1000,16 @@ Compose your artistic monologue.`;
 
 app.listen(PORT, "0.0.0.0", async () => {
   console.log(`ShaderMind running on http://localhost:${PORT}`);
+  if (process.env.DO_APP_ID) {
+    console.log(`Deploy: DigitalOcean App Platform (app ${process.env.DO_APP_ID})`);
+  }
 
   if (!process.env.GEMINI_API_KEY) {
     console.warn("WARNING: GEMINI_API_KEY is required. Batch generation uses Gemini only.");
     return;
   }
 
-  console.log(`AI config: batch=${GEMINI_MODEL}, glsl=${GEMINI_GLSL_MODEL}`);
+  console.log(`AI config: Gemini-only=${GEMINI_ONLY}, batch=${GEMINI_MODEL}, glsl=${GEMINI_GLSL_MODEL}, DO fallback=${ALLOW_DO_FALLBACK}`);
   console.log(`Learning: mode=${LEARNING_MODE}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
   if (AUTOPILOT_ENABLED) {
