@@ -1,6 +1,6 @@
 # ShaderMind — Long Memory & Learning Loop Implementation Plan
 
-> Status: **planned** (not yet implemented)  
+> Status: **implemented** (Phase 1–5 complete; MongoDB ready when `MONGODB_URI` is set)  
 > Target: Continual Learning theme + Gemini Special Prize + DigitalOcean deploy  
 > Reference: [PLUS arXiv:2507.13579](https://arxiv.org/abs/2507.13579)
 
@@ -304,45 +304,45 @@ AUTOPILOT_INTERVAL_MS=45000
 
 ## 9. Implementation Phases
 
-### Phase 1 — Storage layer (blocked on Atlas credentials)
+### Phase 1 — Storage layer
 
-- [ ] Add `mongodb` npm dependency
-- [ ] Implement `MongoStorage` + `JsonStorage`
-- [ ] Migration script from `database.json`
-- [ ] Swap `loadDB`/`saveDB` in `server.js` for storage abstraction
-- [ ] **User provides `MONGODB_URI`**
+- [x] Add `mongodb` npm dependency
+- [x] Implement `MongoStorage` + `JsonStorage`
+- [x] Migration script from `database.json` (`npm run migrate:mongo`)
+- [x] Swap `loadDB`/`saveDB` in `server.js` for storage abstraction
+- [ ] **User provides `MONGODB_URI`** (optional — JSON fallback active)
 
 ### Phase 2 — Learning modes
 
-- [ ] `LEARNING_MODE` env flag
-- [ ] Wire autonomous path when `autonomous`
-- [ ] Hybrid: `awaiting_human` with timeout → `autoCurateBatch` → evolve
-- [ ] Record `curatorSource` on every generation
+- [x] `LEARNING_MODE` env flag
+- [x] Wire autonomous path when `autonomous`
+- [x] Hybrid: `awaiting_human` with timeout → `autoCurateBatch` → evolve
+- [x] Record `curatorSource` on every generation
 
 ### Phase 3 — Tiered memory in prompts
 
-- [ ] `assembleWorkingMemory()` helper
-- [ ] Limit remix GLSL injection size
-- [ ] Load latest rollup into generation + evolution prompts
+- [x] `assembleWorkingMemory()` helper
+- [x] Limit remix GLSL injection size
+- [x] Load latest rollup into generation + evolution prompts
 
 ### Phase 4 — Consolidation job
 
-- [ ] `consolidateMemory()` Gemini call every N gens
-- [ ] Write to `memory_rollups`
-- [ ] Update `agent_state.lastConsolidationGen`
-- [ ] Optional manual `/api/memory/consolidate`
+- [x] `consolidateMemory()` Gemini call every N gens
+- [x] Write to `memory_rollups`
+- [x] Update `agent_state.lastConsolidationGen`
+- [x] Optional manual `/api/memory/consolidate`
 
 ### Phase 5 — Paginated UI
 
-- [ ] Gallery loads current batch + paginated history
-- [ ] Timeline fetches generations with limit/skip
-- [ ] No full 3,650 load on client
+- [x] Gallery loads current batch + paginated history
+- [x] Timeline fetches generations with limit/skip
+- [x] No full 3,650 load on client
 
 ### Phase 6 — Deploy
 
-- [ ] DigitalOcean App Platform env: `MONGODB_URI`, `GEMINI_API_KEY`
-- [ ] Atlas network access for DO egress
-- [ ] Remove `database.json` from production writes (keep as dev fallback only)
+- [x] DigitalOcean App Platform env template: `MONGODB_URI`, `GEMINI_API_KEY`
+- [ ] Atlas network access for DO egress (user action)
+- [x] `database.json` dev fallback only when `MONGODB_URI` unset
 
 ---
 
@@ -386,10 +386,11 @@ Never commit `MONGODB_URI` to git. Use `.env` locally and platform secrets in pr
 | Human-gated autopilot | ✅ Implemented |
 | Gallery WebGL rendering | ✅ Fixed (padding-box + compileWhenReady) |
 | `database.json` persistence | ✅ Active (to be replaced) |
-| MongoDB | ❌ Not started |
-| Learning mode flag | ❌ Not started |
-| Memory consolidation | ❌ Not started |
-| Paginated API | ❌ Not started |
+| MongoDB | ✅ Ready (`MONGODB_URI` → Atlas; else JSON) |
+| Learning mode flag | ✅ `LEARNING_MODE=human\|autonomous\|hybrid` |
+| Memory consolidation | ✅ Every 25 gens + manual endpoint |
+| Paginated API | ✅ `GET /api/sketches?page&limit` |
+| GLSL validation/retry | ✅ 6-pass validation before fallback |
 
 ---
 
@@ -404,4 +405,4 @@ Never commit `MONGODB_URI` to git. Use `.env` locally and platform secrets in pr
 ---
 
 *Document owner: ShaderMind / 2026 AI Engineer World's Fair*  
-*Next action: user provides MongoDB Atlas `MONGODB_URI` → implement Phase 1*
+*Next action: add `MONGODB_URI` to `.env` + run `npm run migrate:mongo` for production deploy*

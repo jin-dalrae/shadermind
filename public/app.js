@@ -71,12 +71,13 @@ class ShaderMindUI {
       const [stateRes, autopilotRes, sketchesRes] = await Promise.all([
         fetch("/api/state"),
         fetch("/api/autopilot/status"),
-        fetch("/api/sketches")
+        fetch("/api/sketches?limit=200")
       ]);
 
       const state = await stateRes.json();
       const autopilot = await autopilotRes.json();
-      this.sketches = await sketchesRes.json();
+      const sketchData = await sketchesRes.json();
+      this.sketches = Array.isArray(sketchData) ? sketchData : (sketchData.items || []);
 
       this.updateHeader(state, autopilot);
       this.updateStudio(autopilot);

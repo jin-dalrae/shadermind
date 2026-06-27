@@ -6,11 +6,13 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "migrate:mongo": "node scripts/migrate-json-to-mongo.js"
   },
   "dependencies": {
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "mongodb": "^6.21.0",
     "openai": "^4.52.0"
   }
 }

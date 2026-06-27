@@ -1,9 +1,12 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
+import { loadDB, saveDB, createStorage } from "./storage/index.js";
+import { DEFAULT_DB } from "./storage/default-db.js";
+import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
+import { buildRemixSection, consolidateMemory } from "./lib/memory.js";
 
 dotenv.config();
 
@@ -22,6 +25,9 @@ const GEMINI_ONLY = process.env.GEMINI_ONLY !== "false";
 const ALLOW_DO_FALLBACK = process.env.ALLOW_DO_FALLBACK === "true";
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 90000;
 const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
+const LEARNING_MODE = process.env.LEARNING_MODE || "human";
+const HYBRID_TIMEOUT_MS = Number(process.env.HYBRID_TIMEOUT_MS) || 300000;
+const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -31,37 +37,6 @@ const client = new OpenAI({
   baseURL: "https://inference.do-ai.run/v1",
   apiKey: doApiKey || "dummy-key",
 });
-
-const DB_PATH = path.join(__dirname, "database.json");
-
-const DEFAULT_DB = {
-  totalSketches: 0,
-  generationCount: 0,
-  successRate: 0,
-  currentStrategy: `Focus on fundamental machine creativity and mathematical beauty:
-1. Curves that bend and flow using harmonic waves and 2D Simplex Noise.
-2. Organic, living movement mimicking natural phenomena (like exposed candle flames in the wind).
-3. Subtlety, micro-animations, and soft gradient attenuation.
-4. Clean, valid WebGL 1.0 GLSL fragment shader code with proper precision.`,
-  heuristics: [
-    "Radial symmetry + slow motion → baseline approval target 70%",
-    "Soft chromatic gradients and warm amber overlays significantly outperform high-saturation colors.",
-    "Organic, flow-based coordinate warping is rated highly, whereas rigid geometric grids are rejected."
-  ],
-  strategyTimeline: [
-    {
-      generation: 0,
-      timestamp: new Date().toISOString(),
-      strategy: "Initial baseline setup: geometric flow and subtle light dynamics.",
-      notes: "Starting point inspired by Zach Lieberman's daily sketches survey."
-    }
-  ],
-  sketches: [],
-  statistics: {
-    generations: [],
-    popularTags: []
-  }
-};
 
 const autopilot = {
   running: false,
@@ -90,58 +65,10 @@ function releaseHumanGate() {
   }
 }
 
-function loadDB() {
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      const raw = fs.readFileSync(DB_PATH, "utf8");
-      const parsed = JSON.parse(raw);
-      return { ...JSON.parse(JSON.stringify(DEFAULT_DB)), ...parsed };
-    }
-  } catch (err) {
-    console.error("Error loading database, returning default:", err);
-  }
-  return JSON.parse(JSON.stringify(DEFAULT_DB));
-}
-
-function saveDB(data) {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf8");
-  } catch (err) {
-    console.error("Error saving database:", err);
-  }
-}
-
-if (!fs.existsSync(DB_PATH)) {
-  saveDB(DEFAULT_DB);
-}
-
 function normalizeDna(dna) {
   if (Array.isArray(dna)) return dna.map(String).filter(Boolean);
   if (typeof dna === "string") return dna.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
   return ["experiment"];
-}
-
-function decodeGlslField(value) {
-  if (typeof value !== "string") return value;
-  const trimmed = value.trim();
-  let cleaned = trimmed;
-  if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/, "");
-  }
-  if (cleaned.includes("gl_FragColor") || cleaned.startsWith("precision")) {
-    return cleaned.replace(/\\n/g, "\n");
-  }
-  if (/^[A-Za-z0-9+/=]+$/.test(trimmed) && trimmed.length > 40) {
-    try {
-      const decoded = Buffer.from(trimmed, "base64").toString("utf8");
-      if (decoded.includes("precision") || decoded.includes("gl_FragColor")) {
-        return decoded;
-      }
-    } catch {
-      // fall through to raw string
-    }
-  }
-  return value.replace(/\\n/g, "\n");
 }
 
 function stripMarkdownFences(text) {
@@ -181,7 +108,11 @@ function parseJsonFromModel(rawResponse) {
   throw lastError || new Error("Unable to parse model JSON response.");
 }
 
-async function callGemini(systemInstruction, userPrompt, { jsonMode = false, model = GEMINI_MODEL } = {}) {
+async function callGemini(systemInstruction, userPrompt, {
+  jsonMode = false,
+  model = GEMINI_MODEL,
+  maxOutputTokens = 8000
+} = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured.");
@@ -194,7 +125,7 @@ async function callGemini(systemInstruction, userPrompt, { jsonMode = false, mod
     systemInstruction: { parts: [{ text: systemInstruction }] },
     generationConfig: {
       temperature: 0.7,
-      maxOutputTokens: 8000,
+      maxOutputTokens,
     }
   };
 
@@ -227,7 +158,8 @@ async function runGeminiWithRetry(systemInstruction, userPrompt, {
   jsonMode = false,
   models = [GEMINI_MODEL],
   retriesPerModel = 3,
-  label = "request"
+  label = "request",
+  maxOutputTokens = 8000
 } = {}) {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error("GEMINI_API_KEY is not configured.");
@@ -238,7 +170,7 @@ async function runGeminiWithRetry(systemInstruction, userPrompt, {
     for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
       try {
         console.log(`[Gemini ${model}] ${label} (attempt ${attempt + 1})`);
-        return await callGemini(systemInstruction, userPrompt, { jsonMode, model });
+        return await callGemini(systemInstruction, userPrompt, { jsonMode, model, maxOutputTokens });
       } catch (err) {
         lastError = err;
         console.warn(`[Gemini ${model}] ${label} failed: ${err.message}`);
@@ -296,22 +228,6 @@ async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false, 
     max_completion_tokens: 4000,
   });
   return completion.choices[0].message.content.trim();
-}
-
-function buildRemixSection(db) {
-  const previousGoodSketches = db.sketches
-    .filter(s => s.rating === "good")
-    .slice(-3);
-
-  if (previousGoodSketches.length === 0) {
-    return "";
-  }
-
-  let remixSection = `\nHere are some of your previous sketches that were rated 'Good'. Use their techniques or directly remix fragments of their math formulas as Zach Lieberman recommends ('Make something new out of something old'):\n`;
-  previousGoodSketches.forEach((s, idx) => {
-    remixSection += `\n--- SOURCE TEMPLATE #${idx + 1}: "${s.title}" ---\nPoetic Description: ${s.poetic_statement}\nDNA: ${s.dna.join(", ")}\nGLSL Code:\n${s.glsl}\n`;
-  });
-  return remixSection;
 }
 
 function buildGenerationPrompts(db, userFocus, genNum) {
@@ -418,10 +334,18 @@ Output raw JSON array only.`;
 }
 
 async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
+  const rollup = (db.memoryRollups || []).at(-1);
+  const rollupHint = rollup?.summary ? `\nConsolidated memory: ${rollup.summary.slice(0, 600)}` : "";
+
   const systemPrompt = `You are ShaderMind writing one WebGL 1.0 fragment shader.
 Output ONLY raw GLSL ES 1.0 source code. No markdown fences, no JSON, no explanation.
-Rules: precision mediump float; use gl_FragColor; uniforms u_time, u_resolution, u_mouse.
-Strategy: ${db.currentStrategy}`;
+Rules:
+- precision mediump float; at top
+- void main() { ... gl_FragColor = vec4(...); }
+- uniforms: uniform float u_time; uniform vec2 u_resolution; uniform vec2 u_mouse;
+- NEVER use GLSL ES 3.0 (no out vec4, no in vec2)
+- Keep shaders under 120 lines; complete and compilable
+Strategy: ${db.currentStrategy}${rollupHint}`;
 
   const userPrompt = `Generation #${genNum}, shader #${index + 1}.
 Title: ${meta.title}
@@ -429,21 +353,37 @@ Type: ${meta.type}
 Hypothesis: ${meta.hypothesis}
 Focus: ${userFocus}
 DNA: ${normalizeDna(meta.dna).join(", ")}
-Write a complete fragment shader.`;
+Write a complete, valid fragment shader.`;
 
   const label = `GLSL gen ${genNum} #${index + 1}`;
-  const raw = await runGeminiWithRetry(systemPrompt, userPrompt, {
-    jsonMode: false,
-    models: [GEMINI_GLSL_MODEL, GEMINI_MODEL],
-    retriesPerModel: 2,
-    label
-  });
+  const models = [GEMINI_GLSL_MODEL, GEMINI_MODEL].filter((m, i, a) => a.indexOf(m) === i);
+  const maxAttempts = 6;
+  let lastError = null;
 
-  const glsl = decodeGlslField(raw.trim());
-  if (!glsl || !glsl.includes("gl_FragColor")) {
-    throw new Error(`Shader #${index + 1} returned invalid GLSL payload.`);
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const raw = await runGeminiWithRetry(systemPrompt, userPrompt, {
+        jsonMode: false,
+        models,
+        retriesPerModel: 1,
+        label: `${label} (pass ${attempt + 1})`,
+        maxOutputTokens: 12000
+      });
+
+      const validation = validateGlsl(decodeGlslField(raw.trim()));
+      if (!validation.valid) {
+        throw new Error(validation.reason);
+      }
+      return validation.code;
+    } catch (err) {
+      lastError = err;
+      if (attempt < maxAttempts - 1) {
+        await sleep(1000 * (attempt + 1));
+      }
+    }
   }
-  return glsl;
+
+  throw lastError || new Error(`Shader #${index + 1} returned invalid GLSL payload.`);
 }
 
 async function runPool(taskFns, concurrency) {
@@ -506,7 +446,7 @@ async function generateBatchInternal(db, userFocus) {
   return { generation: genNum, sketches };
 }
 
-function recordRatingsAndPersist(db, generation, ratings, newSketches) {
+function recordRatingsAndPersist(db, generation, ratings, newSketches, curatorSource = "human") {
   let goodCount = 0;
   let badCount = 0;
 
@@ -549,6 +489,7 @@ function recordRatingsAndPersist(db, generation, ratings, newSketches) {
     generation,
     goodCount,
     badCount,
+    curatorSource,
     successRate: goodCount + badCount > 0
       ? parseFloat(((goodCount / (goodCount + badCount)) * 100).toFixed(1))
       : 0,
@@ -614,7 +555,8 @@ Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. 
       generation,
       timestamp: new Date().toISOString(),
       strategy: parsedEvo.evolvedStrategy || db.currentStrategy,
-      notes: parsedEvo.analysis
+      notes: parsedEvo.analysis,
+      curatorSource: db._pendingCuratorSource || "human"
     });
 
     return {
@@ -628,7 +570,8 @@ Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. 
       generation,
       timestamp: new Date().toISOString(),
       strategy: db.currentStrategy,
-      notes: `Strategy persisted. (Evolution parser interruption: ${err.message})`
+      notes: `Strategy persisted. (Evolution parser interruption: ${err.message})`,
+      curatorSource: db._pendingCuratorSource || "human"
     });
     return {
       analysis: `Evolution partially completed. (${err.message})`,
@@ -685,8 +628,65 @@ Rate every sketch id. Include all 10 ids in ratings.`;
   };
 }
 
+async function maybeConsolidateMemory(db) {
+  const last = db.lastConsolidationGen || 0;
+  const current = db.generationCount;
+  if (current - last < CONSOLIDATION_EVERY_N) return null;
+
+  try {
+    const rollup = await consolidateMemory(db, runGeminiBatch, {
+      fromGen: last + 1,
+      toGen: current
+    });
+    console.log(`[Memory] Consolidated gens ${rollup.fromGeneration}–${rollup.toGeneration}`);
+    return rollup;
+  } catch (err) {
+    console.warn("[Memory] Consolidation failed:", err.message);
+    return null;
+  }
+}
+
+async function processFeedbackAndEvolve(db, generation, ratings, sketches, userOpinion, curatorSource) {
+  db._pendingCuratorSource = curatorSource;
+  db.learningMode = LEARNING_MODE;
+
+  const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, sketches, curatorSource);
+  const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
+  await maybeConsolidateMemory(db);
+  await saveDB(db);
+  delete db._pendingCuratorSource;
+
+  if (autopilot.currentBatch) {
+    autopilot.currentBatch = autopilot.currentBatch.map(s => ({
+      ...s,
+      rated: true,
+      rating: ratings[s.id] || s.rating
+    }));
+  }
+
+  return { evolution, goodCount, badCount };
+}
+
+async function waitForHumanOrTimeout() {
+  if (LEARNING_MODE !== "hybrid") {
+    await waitForHumanFeedback();
+    return "human";
+  }
+
+  const result = await Promise.race([
+    waitForHumanFeedback().then(() => "human"),
+    sleep(HYBRID_TIMEOUT_MS).then(() => "timeout")
+  ]);
+
+  if (result === "timeout" && autopilot.phase === "awaiting_human") {
+    console.log(`[Autopilot] Hybrid timeout (${HYBRID_TIMEOUT_MS}ms) — auto-curating`);
+    return "timeout";
+  }
+  return "human";
+}
+
 async function runAutopilotCycle() {
-  const db = loadDB();
+  const db = await loadDB();
   const focus = autopilot.lastHumanOpinion
     || db.heuristics?.[0]
     || "Organic flow, slow liquid motion, warm amber gradients like candle flames in wind";
@@ -697,14 +697,32 @@ async function runAutopilotCycle() {
   const { generation, sketches } = await generateBatchInternal(db, focus);
   autopilot.currentBatch = sketches.map(s => ({ ...s, rated: false, rating: null }));
   autopilot.currentGeneration = generation;
-  autopilot.phase = "awaiting_human";
 
-  console.log(`[Autopilot] Gen #${generation} ready — waiting for human curation`);
-  await waitForHumanFeedback();
+  if (LEARNING_MODE === "autonomous") {
+    autopilot.phase = "evolving";
+    const { ratings, opinion } = await autoCurateBatch(sketches, db);
+    await processFeedbackAndEvolve(db, generation, ratings, sketches, opinion, "autonomous");
+    autopilot.cyclesCompleted += 1;
+    autopilot.phase = "waiting";
+    console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} auto-curated`);
+    return;
+  }
+
+  autopilot.phase = "awaiting_human";
+  console.log(`[Autopilot] Gen #${generation} ready — ${LEARNING_MODE === "hybrid" ? "human or timeout" : "waiting for human curation"}`);
+
+  const curationResult = await waitForHumanOrTimeout();
+
+  if (curationResult === "timeout") {
+    autopilot.phase = "evolving";
+    const { ratings, opinion } = await autoCurateBatch(sketches, db);
+    await processFeedbackAndEvolve(db, generation, ratings, sketches, opinion, "autonomous");
+    releaseHumanGate();
+  }
 
   autopilot.cyclesCompleted += 1;
   autopilot.phase = "waiting";
-  console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} curated by human`);
+  console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} curated`);
 }
 
 async function autopilotLoop(maxCycles = Infinity) {
@@ -753,29 +771,83 @@ function stopAutopilot() {
 // API ROUTES
 // ==========================================
 
-app.get("/api/state", (req, res) => {
-  const db = loadDB();
-  res.json({
-    totalSketches: db.totalSketches,
-    generationCount: db.generationCount,
-    successRate: db.successRate,
-    heuristics: db.heuristics || [],
-    currentStrategy: db.currentStrategy,
-    strategyTimeline: db.strategyTimeline,
-    statistics: db.statistics,
-    sketchesCount: db.sketches.length,
-    autopilot: {
-      running: autopilot.running,
-      phase: autopilot.phase,
-      cyclesCompleted: autopilot.cyclesCompleted,
-      lastError: autopilot.lastError
-    }
-  });
+app.get("/api/state", async (req, res) => {
+  try {
+    const db = await loadDB();
+    const rollup = await createStorage().getLatestRollup();
+    res.json({
+      totalSketches: db.totalSketches,
+      generationCount: db.generationCount,
+      successRate: db.successRate,
+      heuristics: db.heuristics || [],
+      currentStrategy: db.currentStrategy,
+      strategyTimeline: db.strategyTimeline,
+      statistics: db.statistics,
+      sketchesCount: db.sketches.length,
+      learningMode: LEARNING_MODE,
+      lastConsolidationGen: db.lastConsolidationGen || 0,
+      memoryRollup: rollup ? {
+        fromGeneration: rollup.fromGeneration,
+        toGeneration: rollup.toGeneration,
+        excerpt: (rollup.summary || "").slice(0, 400)
+      } : null,
+      autopilot: {
+        running: autopilot.running,
+        phase: autopilot.phase,
+        cyclesCompleted: autopilot.cyclesCompleted,
+        lastError: autopilot.lastError
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
-app.get("/api/sketches", (req, res) => {
-  const db = loadDB();
-  res.json(db.sketches);
+app.get("/api/sketches", async (req, res) => {
+  try {
+    const page = Number(req.query.page) || 0;
+    const limit = Number(req.query.limit) || 0;
+
+    if (page > 0 || limit > 0) {
+      const result = await createStorage().getSketchesPaginated({
+        page: page || 1,
+        limit: limit || 20,
+        generation: req.query.generation ? Number(req.query.generation) : undefined,
+        rating: req.query.rating || undefined
+      });
+      return res.json(result);
+    }
+
+    const db = await loadDB();
+    res.json(db.sketches);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/memory/rollup", async (req, res) => {
+  try {
+    const rollup = await createStorage().getLatestRollup();
+    res.json({ rollup });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post("/api/memory/consolidate", async (req, res) => {
+  try {
+    const db = await loadDB();
+    const fromGen = req.body?.fromGeneration ?? (db.lastConsolidationGen || 0) + 1;
+    const toGen = req.body?.toGeneration ?? db.generationCount;
+    if (toGen < fromGen) {
+      return res.status(400).json({ error: "Nothing to consolidate." });
+    }
+    const rollup = await consolidateMemory(db, runGeminiBatch, { fromGen, toGen });
+    await saveDB(db);
+    res.json({ success: true, rollup });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/autopilot/status", (req, res) => {
@@ -814,22 +886,26 @@ app.post("/api/autopilot/stop", (req, res) => {
   res.json({ success: true, message: "Autopilot stopping after current cycle." });
 });
 
-app.post("/api/reset-baseline", (req, res) => {
-  const db = loadDB();
-  db.currentStrategy = DEFAULT_DB.currentStrategy;
-  db.heuristics = [...DEFAULT_DB.heuristics];
-  db.strategyTimeline = [{
-    generation: 0,
-    timestamp: new Date().toISOString(),
-    strategy: DEFAULT_DB.strategyTimeline[0].strategy,
-    notes: "Strategy baseline reset. Sketch history preserved."
-  }];
-  saveDB(db);
-  res.json({ success: true, currentStrategy: db.currentStrategy });
+app.post("/api/reset-baseline", async (req, res) => {
+  try {
+    const db = await loadDB();
+    db.currentStrategy = DEFAULT_DB.currentStrategy;
+    db.heuristics = [...DEFAULT_DB.heuristics];
+    db.strategyTimeline = [{
+      generation: 0,
+      timestamp: new Date().toISOString(),
+      strategy: DEFAULT_DB.strategyTimeline[0].strategy,
+      notes: "Strategy baseline reset. Sketch history preserved."
+    }];
+    await saveDB(db);
+    res.json({ success: true, currentStrategy: db.currentStrategy });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/generate", async (req, res) => {
-  const db = loadDB();
+  const db = await loadDB();
   const userFocus = req.body.focus || "Something organic and flowy";
 
   try {
@@ -842,7 +918,7 @@ app.post("/api/generate", async (req, res) => {
 });
 
 app.post("/api/feedback", async (req, res) => {
-  const db = loadDB();
+  const db = await loadDB();
   const { generation, ratings, userOpinion, newSketches } = req.body;
 
   if (!generation || !ratings) {
@@ -852,19 +928,15 @@ app.post("/api/feedback", async (req, res) => {
   autopilot.phase = "evolving";
   autopilot.lastHumanOpinion = userOpinion || null;
 
-  const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, newSketches);
-
   try {
-    const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
-    saveDB(db);
-
-    if (autopilot.currentBatch) {
-      autopilot.currentBatch = autopilot.currentBatch.map(s => ({
-        ...s,
-        rated: true,
-        rating: ratings[s.id] || s.rating
-      }));
-    }
+    const { evolution, goodCount, badCount } = await processFeedbackAndEvolve(
+      db,
+      generation,
+      ratings,
+      newSketches,
+      userOpinion,
+      "human"
+    );
 
     releaseHumanGate();
     autopilot.phase = "waiting";
@@ -880,7 +952,7 @@ app.post("/api/feedback", async (req, res) => {
       badCount
     });
   } catch (err) {
-    saveDB(db);
+    await saveDB(db);
     releaseHumanGate();
     autopilot.phase = "error";
     res.status(500).json({ error: "Feedback recorded but evolution failed.", details: err.message });
@@ -888,7 +960,7 @@ app.post("/api/feedback", async (req, res) => {
 });
 
 app.get("/api/narrative", async (req, res) => {
-  const db = loadDB();
+  const db = await loadDB();
 
   if (db.sketches.length === 0) {
     return res.json({
@@ -926,7 +998,7 @@ Compose your artistic monologue.`;
   }
 });
 
-app.listen(PORT, "0.0.0.0", () => {
+app.listen(PORT, "0.0.0.0", async () => {
   console.log(`ShaderMind running on http://localhost:${PORT}`);
 
   if (!process.env.GEMINI_API_KEY) {
@@ -935,9 +1007,11 @@ app.listen(PORT, "0.0.0.0", () => {
   }
 
   console.log(`AI config: Gemini-only=${GEMINI_ONLY}, batch=${GEMINI_MODEL}, glsl=${GEMINI_GLSL_MODEL}, DO fallback=${ALLOW_DO_FALLBACK}`);
+  console.log(`Learning: mode=${LEARNING_MODE}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
   if (AUTOPILOT_ENABLED) {
-    const target = Math.max(0, AUTOPILOT_SEED_CYCLES - loadDB().generationCount);
+    const db = await loadDB();
+    const target = Math.max(0, AUTOPILOT_SEED_CYCLES - db.generationCount);
     console.log(`Starting autonomous autopilot (continuous, seed target: ${AUTOPILOT_SEED_CYCLES} gens)...`);
     startAutopilot(Infinity);
     if (target > 0) {
