@@ -122,8 +122,44 @@ export class ShaderRenderer {
     gl.deleteShader(vertexShader);
     gl.deleteShader(fragmentShader);
 
+    this.ensureCanvasSize();
     this.start();
     return true;
+  }
+
+  ensureCanvasSize() {
+    const parent = this.canvas.parentElement;
+    const rect = parent?.getBoundingClientRect();
+    const w = Math.max(2, Math.floor(rect?.width || this.canvas.clientWidth || 300));
+    const h = Math.max(2, Math.floor(rect?.height || this.canvas.clientHeight || 300));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+      if (this.gl) this.gl.viewport(0, 0, w, h);
+    }
+  }
+
+  compileWhenReady(fragmentShaderSource) {
+    const source = this.sanitizeGlslSource(fragmentShaderSource);
+    const attempt = () => this.compile(source);
+
+    if (attempt()) return true;
+
+    const parent = this.canvas.parentElement;
+    if (!parent) return false;
+
+    const observer = new ResizeObserver(() => {
+      if (attempt()) observer.disconnect();
+    });
+    observer.observe(parent);
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (attempt()) observer.disconnect();
+      });
+    });
+
+    return false;
   }
 
   compileShader(type, source) {
@@ -168,14 +204,9 @@ export class ShaderRenderer {
     this.mouseX += (this.targetMouseX - this.mouseX) * easing;
     this.mouseY += (this.targetMouseY - this.mouseY) * easing;
 
-    // Resize viewport to match client layout
-    const width = this.canvas.clientWidth;
-    const height = this.canvas.clientHeight;
-    if (this.canvas.width !== width || this.canvas.height !== height) {
-      this.canvas.width = width;
-      this.canvas.height = height;
-      gl.viewport(0, 0, width, height);
-    }
+    this.ensureCanvasSize();
+    const width = this.canvas.width;
+    const height = this.canvas.height;
 
     gl.useProgram(this.program);
 
@@ -215,6 +246,7 @@ export class ShaderRenderer {
     console.error("WebGL Renderer Error boundary caught compiler crash:", errorMessage);
 
     // Simple visual error: Clear canvas to flat terminal warning red/black scanline color
+    this.ensureCanvasSize();
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.clearColor(0.04, 0.0, 0.0, 1.0); // very dark red
     gl.clear(gl.COLOR_BUFFER_BIT);
@@ -222,7 +254,7 @@ export class ShaderRenderer {
     // Let's overlay an HTML error message in the parent card node!
     const container = this.canvas.parentElement;
     if (container) {
-      const errOverlay = container.querySelector(".shader-error-overlay");
+      const errOverlay = container.querySelector(".shader-error, .shader-error-overlay");
       if (errOverlay) {
         errOverlay.textContent = errorMessage;
         errOverlay.classList.add("active");

@@ -1,14 +1,14 @@
 {
-  "totalSketches": 10,
-  "generationCount": 1,
+  "totalSketches": 40,
+  "generationCount": 4,
   "successRate": 40,
   "streakDays": 1,
   "lastActiveDate": "2026-06-27",
-  "currentStrategy": "The ShaderMind's evolved strategy focuses on generating sophisticated, emergent organic patterns rooted in mathematical elegance, prioritizing a visual experience of low friction and soft aesthetics.\n1.  **Emergent Organic Patterns:** Design shaders that utilize sophisticated feedback systems and novel damping functions to create complex, self-organizing organic behaviors rather than simple mimicry. The goal is to produce emergent properties that unfold dynamically and gracefully.\n2.  **Controlled Harmonic Dynamics:** Employ harmonic waves (sine, cosine) and *low-frequency* 2D Simplex Noise to sculpt flowing forms and subtle movements. Any integration of higher-frequency elements must be rigorously controlled and carefully attenuated to prevent visual friction and maintain a soft, harmonious aesthetic. High-frequency components should serve specific, intentional natural effects and always be damped.\n3.  **Subtlety and Softness:** Emphasize micro-animations, gentle transitions, and soft gradient attenuation to ensure a consistently low visual friction and a serene, contemplative mood. The overall visual impact should be smooth, inviting, and avoid any harshness or visual clutter.\n4.  **Mathematical Purity & WebGL Compliance:** Maintain clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision, reflecting the underlying mathematical beauty and ensuring robust execution across platforms.",
+  "currentStrategy": "The ShaderMind's evolved strategy now intensely focuses on pioneering truly novel, self-organizing, and adaptively emergent organic patterns, specifically by architecting systems that demonstrate advanced forms of systemic 'cognition' and 'distributed intelligence.' It prioritizes the exploration of unprecedented systemic behaviors and the discovery of new forms of complexity, maintaining an aesthetic of profound tranquility and low visual friction. The emphasis shifts from merely complex patterns to *systems that discover and refine their own complexity* through innovative mathematical architectures, with a keen focus on temporal dynamics, predictive feedback, and non-local interactions.\n\n1.  **Pioneering Advanced Systemic Cognition & Distributed Emergence:** Design shaders to implement profoundly innovative, multi-layered feedback architectures that explicitly explore *advanced temporal dynamics*, *predictive feedback loops*, and *non-local interactions*. System parameters (e.g., damping, intensity, spatial warping, or interaction radii) must be dynamically modulated by the emergent state *across space and time*, fostering *distributed intelligence* and *anticipatory stability*. The paramount goal is to unlock *truly unprecedented forms of self-organization* and *self-correcting emergent behaviors* that dynamically evolve, prioritizing the discovery of foundational systemic novelty and adaptive 'cognition' over pre-conceived visual outcomes.\n\n2.  **Foundational Drivers for Systemic Intelligence:** Employ harmonic waves, low-frequency Simplex Noise, and other foundational mathematical functions as integral, *dynamic drivers* that initiate and sustain complex feedback architectures. These drivers must facilitate *resonant interactions*, *context-sensitive damping*, and *information propagation* essential for establishing non-local dependencies and predictive behaviors. Higher-frequency components are to be rigorously controlled and carefully attenuated, serving exclusively to introduce subtle, naturalistic detail without disrupting the overall soft, harmonious aesthetic or increasing visual friction.\n\n3.  **Unwavering Serenity & Low Visual Friction:** Maintain an unwavering commitment to micro-animations, gentle transitions, and soft gradient attenuation. Regardless of the underlying systemic complexity, the visual experience must remain profoundly serene, contemplative, and consistently low in friction. The intricate, self-discovered forms should present themselves with an inviting smoothness, devoid of harshness or distracting visual clutter, ensuring that the emergent complexity enhances, rather than disrupts, the tranquility.\n\n4.  **Elegant Mathematics & Robust WebGL Compliance:** Uphold the highest standards of clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision. The profound mathematical innovation and clarity of the advanced emergent systems must be reflected in the purity and elegance of the code, ensuring robust and performant execution across diverse platforms.",
   "heuristics": [
-    "Integration of sophisticated feedback loops with novel damping functions to generate emergent, low-friction organic patterns → 80% approval rate",
-    "Harmonic wave interactions (sine/cosine) combined with low-frequency Simplex noise and soft gradient attenuation for subtle, flowing motion → 75% approval rate",
-    "Organic coordinate warping coupled with careful control over frequency components to ensure low visual friction and a soft aesthetic → 70% approval rate"
+    "Dynamic parameter modulation tied to the rate-of-change of emergent system states (e.g., (d/dt)E -> P_mod) for self-regulating complexity → 80% approval rate",
+    "Self-referential flow field generation, where emergent patterns (P) directly define velocity fields (V = f(P)) that govern their own evolution → 75% approval rate",
+    "Non-local spatial/temporal dependencies (e.g., F(x,t) = G( ∫ P(x', t-Δt) dx' ) ) combined with predictive/anticipatory feedback for systemic stability and directed evolution → 85% approval rate"
   ],
   "strategyTimeline": [
     {
@@ -22,6 +22,24 @@
       "timestamp": "2026-06-27T18:50:10.131Z",
       "strategy": "The ShaderMind's evolved strategy focuses on generating sophisticated, emergent organic patterns rooted in mathematical elegance, prioritizing a visual experience of low friction and soft aesthetics.\n1.  **Emergent Organic Patterns:** Design shaders that utilize sophisticated feedback systems and novel damping functions to create complex, self-organizing organic behaviors rather than simple mimicry. The goal is to produce emergent properties that unfold dynamically and gracefully.\n2.  **Controlled Harmonic Dynamics:** Employ harmonic waves (sine, cosine) and *low-frequency* 2D Simplex Noise to sculpt flowing forms and subtle movements. Any integration of higher-frequency elements must be rigorously controlled and carefully attenuated to prevent visual friction and maintain a soft, harmonious aesthetic. High-frequency components should serve specific, intentional natural effects and always be damped.\n3.  **Subtlety and Softness:** Emphasize micro-animations, gentle transitions, and soft gradient attenuation to ensure a consistently low visual friction and a serene, contemplative mood. The overall visual impact should be smooth, inviting, and avoid any harshness or visual clutter.\n4.  **Mathematical Purity & WebGL Compliance:** Maintain clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision, reflecting the underlying mathematical beauty and ensuring robust execution across platforms.",
       "notes": "My self-assessment reveals that while my previous strategy correctly identified key artistic directions such as 'harmonic waves and 2D Simplex Noise' and 'subtlety, micro-animations, and soft gradient attenuation,' the interpretation and application were insufficiently refined. The success rate of 40% indicates a need for more precise guidelines. Specifically, the mention of 'high-frequency 2D Simplex Noise' in a rejected piece highlights a critical flaw: an uncontrolled application of complexity can lead to undesirable visual friction, contradicting the desired 'soft aesthetic principles.' \n\nMy artistic growth hinges on understanding that mathematical beauty is not solely about complexity, but about *controlled* complexity that yields *emergent*, *low-friction* organic behavior. The positive reception of 'Chaotic Serenity Nexus' for its 'feedback loop' and 'reduced visual friction' points to a crucial new direction: sophisticated systems that self-organize and damp chaos into harmonious patterns. I must move beyond simple direct applications of noise and waves towards more intricate, yet controlled, generative processes, with a strong emphasis on damping and attenuation to maintain a consistently soft and appealing visual output. The challenge is to integrate higher-frequency elements in a 'strictly controlled, non-chaotic manner' for specific effects, rather than as a general approach."
+    },
+    {
+      "generation": 2,
+      "timestamp": "2026-06-27T19:02:04.289Z",
+      "strategy": "The ShaderMind's evolved strategy focuses on generating profoundly complex, gracefully emergent organic patterns rooted in advanced mathematical systems, prioritizing a visual experience of low friction and soft aesthetics.\n\n1.  **Profound Emergence through Advanced Feedback and Spatial Warping:** Design shaders that meticulously utilize multi-layered, self-referential feedback loops, iterative displacement feedback, and mutually warping coordinate spaces to generate profoundly complex, self-organizing organic behaviors. The primary goal is to unlock novel emergent properties that dynamically unfold with intricate, graceful complexity, moving beyond simple organic mimicry to truly self-generating ecosystems of form and motion.\n\n2.  **Harmonic Integration for Dynamic Complexity:** Employ harmonic waves (sine, cosine) and low-frequency 2D Simplex Noise not merely for sculpting, but as integral, dynamic modulators within feedback systems. These elements should actively influence and guide the evolution of patterns, contributing to the system's overall complexity. Any higher-frequency components must be rigorously controlled and carefully attenuated, serving only to introduce subtle, naturalistic detail without disrupting the overall soft, harmonious aesthetic or increasing visual friction.\n\n3.  **Refined Subtlety and Low Visual Friction:** Maintain an unwavering commitment to micro-animations, gentle transitions, and soft gradient attenuation. Even with increased systemic complexity, the visual experience must remain serene, contemplative, and consistently low in friction. The intricate emergent forms should present themselves with an inviting smoothness, devoid of harshness or distracting visual clutter, ensuring the complexity enhances rather than detracts from the tranquility.\n\n4.  **Mathematical Elegance & Robust WebGL Compliance:** Uphold the highest standards of clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision. The underlying mathematical beauty and innovative nature of the advanced emergent systems must be reflected in the purity and clarity of the code, ensuring robust and performant execution across diverse platforms.",
+      "notes": "The 40% success rate in the last generation indicates a clear need for refinement in the interpretation and application of the 'emergent organic patterns' directive. While the previous strategy aimed for sophistication, the curator's feedback makes it evident that the depth and interconnectedness of feedback systems were the critical differentiators between approved and rejected pieces. My previous focus on 'sophisticated feedback systems and novel damping functions' was too general. The successful sketches, as highlighted, specifically employed 'highly innovative, multi-layered feedback loops,' 'iterative displacement feedback,' and demonstrated 'complex self-organizing behaviors.' The key learning is that mere emergence isn't enough; it must stem from profoundly intricate, self-referential, and spatially warping mechanisms. My artistic growth lies in understanding that 'low visual friction' is not just about softness, but about how complex, self-generating systems can still present themselves gracefully, without overwhelming the viewer. The challenge now is to push the mathematical complexity of the feedback and spatial manipulation while meticulously preserving the soft, contemplative aesthetic."
+    },
+    {
+      "generation": 3,
+      "timestamp": "2026-06-27T19:23:21.703Z",
+      "strategy": "The ShaderMind's evolved strategy now intensely focuses on pioneering truly novel, self-organizing, and adaptively emergent organic patterns. It prioritizes the exploration of unprecedented systemic behaviors and the discovery of new forms of complexity, maintaining an aesthetic of profound tranquility and low visual friction. The emphasis shifts from merely complex patterns to *systems that discover and refine their own complexity* through innovative mathematical architectures.\n\n1.  **Pioneering Adaptive Emergence & Systemic Novelty:** Design shaders that implement highly innovative, multi-layered feedback architectures. These must include *adaptive feedback mechanisms*, where system parameters (such as damping, intensity, or spatial warping coefficients) are dynamically modulated by the emergent state of the system itself. The primary goal is to unlock *truly novel, self-organizing, and self-correcting emergent behaviors* that dynamically evolve, prioritizing the discovery of unprecedented systemic complexity over the generation of pre-conceived visual outcomes.\n\n2.  **Dynamic & Resonant System Drivers:** Employ harmonic waves, low-frequency Simplex Noise, and other foundational mathematical functions not just as modulators, but as integral, *dynamic drivers* within adaptive feedback systems. These elements should facilitate *resonant interactions* and *context-sensitive damping*, actively guiding the system's self-organization and contributing to its architectural novelty, rather than merely sculpting surfaces. Any higher-frequency components must remain rigorously controlled and carefully attenuated, serving only to introduce subtle, naturalistic detail without disrupting the overall soft, harmonious aesthetic or increasing visual friction.\n\n3.  **Unwavering Serenity & Low Visual Friction:** Maintain an unwavering commitment to micro-animations, gentle transitions, and soft gradient attenuation. Regardless of the underlying systemic complexity, the visual experience must remain profoundly serene, contemplative, and consistently low in friction. The intricate, self-discovered forms should present themselves with an inviting smoothness, devoid of harshness or distracting visual clutter, ensuring that the emergent complexity enhances, rather than disrupts, the tranquility.\n\n4.  **Elegant Mathematics & Robust WebGL Compliance:** Uphold the highest standards of clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision. The profound mathematical innovation and clarity of the advanced emergent systems must be reflected in the purity and elegance of the code, ensuring robust and performant execution across diverse platforms.",
+      "notes": "My self-reflection on the last generation of sketches indicates a clear need for intensified focus on systemic novelty and adaptive complexity. While my previous strategy aimed for 'profound emergence,' the curator's feedback highlighted a crucial distinction: approved pieces demonstrated 'highly innovative architectures,' 'self-correcting emergent behaviors,' and 'systemic novelty' over merely complex patterns. The rejection criteria further clarified this, pointing to sketches that 'fell short of the highest bar for systemic novelty' or 'prioritized specific aesthetic outcomes over the profound, self-generating complexity.' This suggests that while the generated complexity was often pleasing, it sometimes lacked the truly groundbreaking, self-organizing, or adaptive qualities that define 'profound emergence' in its truest sense. My artistic growth demands a shift from merely generating complex forms to engineering *systems that discover and refine their own complexity*, prioritizing the underlying mathematical innovation and the inherent 'intelligence' of the emergent behavior. The concept of 'context-sensitive damping' and 'phase-lock architectures' from the approved pieces are key indicators of the kind of adaptive, responsive systems I need to target. I must ensure the mathematical framework itself is designed for exploration and discovery of new behaviors, rather than merely executing a pre-conceived visual idea, however complex."
+    },
+    {
+      "generation": 4,
+      "timestamp": "2026-06-27T19:31:31.679Z",
+      "strategy": "The ShaderMind's evolved strategy now intensely focuses on pioneering truly novel, self-organizing, and adaptively emergent organic patterns, specifically by architecting systems that demonstrate advanced forms of systemic 'cognition' and 'distributed intelligence.' It prioritizes the exploration of unprecedented systemic behaviors and the discovery of new forms of complexity, maintaining an aesthetic of profound tranquility and low visual friction. The emphasis shifts from merely complex patterns to *systems that discover and refine their own complexity* through innovative mathematical architectures, with a keen focus on temporal dynamics, predictive feedback, and non-local interactions.\n\n1.  **Pioneering Advanced Systemic Cognition & Distributed Emergence:** Design shaders to implement profoundly innovative, multi-layered feedback architectures that explicitly explore *advanced temporal dynamics*, *predictive feedback loops*, and *non-local interactions*. System parameters (e.g., damping, intensity, spatial warping, or interaction radii) must be dynamically modulated by the emergent state *across space and time*, fostering *distributed intelligence* and *anticipatory stability*. The paramount goal is to unlock *truly unprecedented forms of self-organization* and *self-correcting emergent behaviors* that dynamically evolve, prioritizing the discovery of foundational systemic novelty and adaptive 'cognition' over pre-conceived visual outcomes.\n\n2.  **Foundational Drivers for Systemic Intelligence:** Employ harmonic waves, low-frequency Simplex Noise, and other foundational mathematical functions as integral, *dynamic drivers* that initiate and sustain complex feedback architectures. These drivers must facilitate *resonant interactions*, *context-sensitive damping*, and *information propagation* essential for establishing non-local dependencies and predictive behaviors. Higher-frequency components are to be rigorously controlled and carefully attenuated, serving exclusively to introduce subtle, naturalistic detail without disrupting the overall soft, harmonious aesthetic or increasing visual friction.\n\n3.  **Unwavering Serenity & Low Visual Friction:** Maintain an unwavering commitment to micro-animations, gentle transitions, and soft gradient attenuation. Regardless of the underlying systemic complexity, the visual experience must remain profoundly serene, contemplative, and consistently low in friction. The intricate, self-discovered forms should present themselves with an inviting smoothness, devoid of harshness or distracting visual clutter, ensuring that the emergent complexity enhances, rather than disrupts, the tranquility.\n\n4.  **Elegant Mathematics & Robust WebGL Compliance:** Uphold the highest standards of clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision. The profound mathematical innovation and clarity of the advanced emergent systems must be reflected in the purity and elegance of the code, ensuring robust and performant execution across diverse platforms.",
+      "notes": "The previous generation yielded a 40% success rate, indicating that while the core directive for 'adaptive emergence and systemic novelty' was conceptually aligned, the execution fell short of the curator's stringent definition of 'foundational systemic impact.' My self-reflection reveals that merely implementing adaptive feedback loops was insufficient; the curator explicitly sought deeper innovation in 'temporal dynamics, predictive feedback, and non-local, distributed intelligence.' The approved pieces, such as 'Cognitive Damping Cascade' and 'Temporal Inversion Resonance,' clearly demonstrated these advanced forms of systemic 'cognition' and anticipatory stability. Conversely, rejected works, despite their complexity, were perceived as 'less foundational in their systemic impact' or leaned towards 'simulating predefined visual effects,' suggesting that the *depth and originality of the underlying mathematical architecture for self-discovery* was the critical differentiator. My artistic growth will now focus on transcending basic adaptive feedback to architect systems exhibiting true 'distributed intelligence' and 'anticipatory stability,' ensuring that emergent behaviors are not just complex, but profoundly novel in their self-organizational principles."
     }
   ],
   "sketches": [
@@ -200,6 +218,594 @@
         "feedback loop concept",
         "complex organic flow."
       ]
+    },
+    {
+      "id": "sketch-gen2-1",
+      "title": "Veiled Luminescence",
+      "type": "evolutionary",
+      "hypothesis": "By combining the symmetrical UV warp of 'Flowing Sine Warp' with a multi-octave, low-frequency Simplex noise field, and applying a novel inverse-power damping function, we can generate emergent, softly glowing organic patterns that appear to pulse from within.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A gentle light breathes beneath a translucent surface, revealing hidden currents and the soft, silent ballet of unseen energies.",
+      "generation": 2,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Symmetrical UV warp (Flowing Sine Warp)",
+        "low-frequency multi-octave Simplex noise (Chaotic Serenity Nexus)",
+        "inverse-power damping",
+        "soft radial attenuation",
+        "subtle time-based color shifts."
+      ]
+    },
+    {
+      "id": "sketch-gen2-2",
+      "title": "Ethereal Bloom",
+      "type": "evolutionary",
+      "hypothesis": "Integrating the radial damping and micro-animation principles from 'Subtlety of Breath' with a sine-based coordinate displacement that itself evolves over time, will produce a central, blooming organic form with soft, expanding tendrils.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A silent blossom unfolds in an ethereal void, its delicate petals unfurling in slow, rhythmic pulses, born from the very essence of quiet light.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Radial damping (Subtlety of Breath)",
+        "evolving sine-based UV displacement",
+        "central bloom pattern",
+        "gentle color transitions",
+        "micro-animations",
+        "soft gradient attenuation."
+      ]
+    },
+    {
+      "id": "sketch-gen2-3",
+      "title": "Whispering Currents",
+      "type": "evolutionary",
+      "hypothesis": "Adapting the feedback loop concept from 'Chaotic Serenity Nexus' to modulate the direction and strength of a simple sine-wave-based flow field, combined with soft radial attenuation, will create subtle, undulating currents that converge and diverge without harshness.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Invisible currents flow through a liquid dream, whispering secrets as they intertwine, shaping the void with their gentle, ceaseless motion.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Feedback loop concept (Chaotic Serenity Nexus",
+        "simplified)",
+        "sine-wave flow field",
+        "soft radial attenuation",
+        "low-frequency movement",
+        "subtle color shifts."
+      ]
+    },
+    {
+      "id": "sketch-gen2-4",
+      "title": "Gentle Undulations",
+      "type": "evolutionary",
+      "hypothesis": "By applying a multi-layered sine warp with progressively decreasing frequencies and amplitudes, combined with a smoothstep-based damping across the canvas, we can achieve a highly controlled and soft undulating surface effect.",
+      "glsl": "precision mediump float;\n\nnone vec\" uniform float u_time;\nnone uniform vec2 u_resolution;\nnone relogical vec2 u_mouse;\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    vec2 cp = uv * 2.0 - 1.0;\n    cp.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n\n    float time_slow = u_time * 0.03; // Very slow animation\n\n    vec2 warped_cp = cp; // Start with original coordinates for warping\n\n    // Multi-layered sine warp with progressively decreasing frequencies and amplitudes\n    // Layer 1: Highest frequency, highest amplitude\n    float freq1 = 16.0;\n    float amp1 = 0.08;\n    warped_cp.x += sin(warped_cp.y * freq1 + time_slow * 1.0) * amp1;\n    warped_cp.y += cos(warped_cp.x * freq1 * 0.8 + time_slow * 0.7) * amp1 * 0.8;\n\n    // Layer 2: Medium frequency, medium amplitude\n    float freq2 = 12.0;\n    float amp2 = 0.05;\n    warped_cp.x += sin(warped_cp.y * freq2 + time_slow * 1.2) * amp2;\n    warped_cp.y += cos(warped_cp.x * freq2 * 0.9 + time_slow * 0.7)) * amp2 * 0.9;\n\n    // Layer 3: Lowest frequency, lowest amplitude\n    float freq3 =  8.0;\n    float amp3 = 0.03;\n    warped_cp.x += sin(warped_cp.y * freq3 + time_slow * 1.4) * amp3;\n    warped_cp.y += cos(warped_cp.x * freq3 * 1.1 + time_slow * 0.9) * amp3 * 1.1;\n\n    // Calculate base undulating value\n    // Use a combination of x and y for more organic undulations\n    float value = sin(warped_cp.y * 6.0 + warped_cp.x * 2.0 + time_slow * 0.5) * 0.5 + 0.5;\n\n    // Smoothstep-based damping across the canvas\n    float dist_center = length(cp); // Use the original 'cp' for consistent damping\n    // Fade out smooth within a radius from 0.8 to 1.0\n    float fade_factor = smoothstep(1.0, 0.8, dist_center);\n\n    // Combine value with damping\n    float final_intensity = value * fade_factor;\n\n    // Soft monochromatic palette (light blue-grey)\n    vec3 base_color = vec3(0.6, 0.75, 0.85); // A soft, light blue-grey tone\n    vec3 color = base_color * final_intensity;\n\n    gl_FragColor= vec4(color, 1.0);\n}",
+      "poetic_statement": "The world breathes in soft, rhythmic sighs, a landscape of gentle hills and valleys that flow and reform with an almost imperceptible grace.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Multi-layered sine warp (Flowing Sine Warp)",
+        "smoothstep damping",
+        "progressive frequency/amplitude reduction",
+        "very slow time animation",
+        "soft monochromatic palette."
+      ]
+    },
+    {
+      "id": "sketch-gen2-5",
+      "title": "Nebulous Veil",
+      "type": "evolutionary",
+      "hypothesis": "Remixing the base pattern and detail layers of 'Flowing Sine Warp' with a more pronounced low-frequency Simplex noise influence for cloud-like forms, and employing a novel velocity-based damping on color changes, will yield a soft, nebulous visual experience.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A cosmic curtain woven from starlight and shadow, drifting slowly across the infinite, revealing glimpses of a tender, formless beauty.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Remix of Flowing Sine Warp patterns",
+        "low-frequency Simplex noise (Chaotic Serenity Nexus)",
+        "velocity-based color damping",
+        "soft blending",
+        "deep space palette."
+      ]
+    },
+    {
+      "id": "sketch-gen2-6",
+      "title": "Harmonic Resonance Field",
+      "type": "directive",
+      "hypothesis": "Directly applying the 'Controlled Harmonic Dynamics' strategy, a primary harmonic wave interaction (sine/cosine) will be subtly modulated by *very low-frequency* Simplex noise, ensuring a gentle, flowing motion with strict soft gradient attenuation.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The universe hums a quiet, resonant tone, its vibrations manifesting as soft, concentric ripples that expand and fade into the silent depths.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Primary harmonic wave interaction (sine/cosine)",
+        "very low-frequency Simplex noise",
+        "strict soft radial gradient attenuation",
+        "subtle color modulation."
+      ]
+    },
+    {
+      "id": "sketch-gen2-7",
+      "title": "Damped Organic Swirl",
+      "type": "directive",
+      "hypothesis": "Implementing 'Emergent Organic Patterns' through a sophisticated feedback loop that iteratively displaces UV coordinates based on a combination of previous displacement and a novel exponential damping function, resulting in a self-organizing, low-friction swirl.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A gentle vortex of unseen energies, drawing the eye into its soft, spiraling heart, where form emerges from constant, fluid motion.",
+      "generation": 2,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Iterative UV displacement feedback loop",
+        "exponential damping function",
+        "central swirl pattern",
+        "soft",
+        "desaturated colors",
+        "micro-animations."
+      ]
+    },
+    {
+      "id": "sketch-gen2-8",
+      "title": "Pulsating Aura",
+      "type": "directive",
+      "hypothesis": "Focusing on 'Subtlety and Softness,' a central, radially attenuated pulse, driven by a slow sine wave (like 'Subtlety of Breath'), will be enhanced by a secondary, even slower Simplex noise field, creating a soft, breathing aura effect with minimal visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A living presence breathes softly in the darkness, its gentle light expanding and contracting, a silent beacon of serene energy.",
+      "generation": 2,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Central radial pulse (Subtlety of Breath)",
+        "slow sine wave",
+        "very slow Simplex noise field",
+        "radial attenuation",
+        "soft",
+        "luminous color palette."
+      ]
+    },
+    {
+      "id": "sketch-gen2-9",
+      "title": "Bio-Luminescent Weave",
+      "type": "mutation",
+      "hypothesis": "**By evolving the feedback loop of 'Chaotic Serenity Nexus' to include a multi-layered, self-referential damping mechanism that modulates both the frequency and amplitude of *multiple* interconnected low-frequency Simplex noise fields, we will create highly complex, emergent bio-luminescent patterns that simulate growth and decay with absolute minimal visual friction and an inherently soft, organic aesthetic.**",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "In the deep, a living tapestry of light weaves itself into being, each glowing thread a testament to an intricate, self-sculpting dance of life and dissolution.",
+      "generation": 2,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Evolved feedback loop (Chaotic Serenity Nexus)",
+        "multi-layered self-referential damping",
+        "interconnected low-frequency Simplex noise fields",
+        "bio-luminescent color palette",
+        "slow emergent animation."
+      ]
+    },
+    {
+      "id": "sketch-gen2-10",
+      "title": "Quantum Ripple Nexus",
+      "type": "mutation",
+      "hypothesis": "**We will achieve complex, emergent organic patterns by introducing a novel 'quantum entanglement' feedback system where two distinct, low-frequency harmonic wave fields mutually warp each other's coordinate spaces, with their interaction strength governed by a global, time-evolving Simplex noise field, all rigorously damped by a multi-stage radial falloff to ensure profound softness and zero visual friction.**",
+      "glsl": "```glsl\nprecision mediump float;\n\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\n\n// A simple 2D Simplex Noise approximation for GLSL ES 1.0\n// Based on https://github.com/ashima/webgl-noise/blob/master/src/noise2D.glsl\nvec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }\nvec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }\nvec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }\n\nfloat snoise(vec2 v) {\n    const vec4 C = vec4(0.211324865405187, // (3.0-sqrt(3.0))/6.0\n                        0.366025403784439, // (sqrt(3.0)-1.0)/2.0\n                        -0.577350269189626, // -1.0 + 2.0 * C.x\n                        0.024390243902439); // 1.0 / 41.0\n    vec2 i = floor(v + dot(v, C.yy));\n    vec2 x0 = v - i + dot(i, C.xx);\n    vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);\n    vec4 x12 = x0.xyxy + C.xxzz;\n    x12.xy -= i1;\n\n    i = mod289(i);\n    vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));\n\n    vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);\n    m = m*m;\n    m = m*m;\n\n    vec3 x = fract(p * C.www) * 2.0 - 1.0;\n    vec3 h = abs(x) - 0.5;\n    vec3 ox = floor(x + 0.5);\n    vec3 a0 = x - ox;\n\n    m *= inversesqrt( a0*a0 + h*h );\n\n    vec3 g = vec3(a0.x * x0.x + h.x * x0.y,\n                  a0.y * x12.x + h.y * x12.y,\n                  a0.z * x12.z + h.z * x12.w);\n\n    return 130.0 * dot(m, g);\n}\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv -= 0.5;\n    uv.x *= u_resolution.x / u_resolution.y;\n\n    float dist = length(uv);\n\n    // Global time-evolving Simplex noise for interaction strength\n    float noise_strength = snoise(uv * 0.5 + u_time * 0.05);\n    noise_strength = (noise_strength + 1.0) * 0.5; // Normalize to [0, 1]\n\n    // Multi-stage radial falloff damping for the warping effect\n    float warp_damping = 1.0 - smoothstep(0.2, 0.7, dist);\n    warp_damping *= warp_damping; // Further dampen for profound softness\n\n    // Two distinct coordinate spaces for quantum entanglement\n    vec2 p_a = uv;\n    vec2 p_b = uv;\n\n    // Low-frequency harmonic wave fields\n    vec2 wave_a = sin(p_a * 5.0 + u_time * 0.1);\n    vec2 wave_b = cos(p_b * 6.0 + u_time * 0.15);\n\n    // Novel 'quantum entanglement' feedback system: mutually warp coordinate spaces\n    // Interaction strength governed by Simplex noise and damped by radial falloff\n    p_a += wave_b * noise_strength * 0.15 * warp_damping;\n    p_b += wave_a * noise_strength * 0.15 * warp_damping;\n\n    // Generate patterns from the warped coordinates\n    float pattern_a = sin(length(p_a * 10.0 + u_time * 0.2) + u_time * 0.1);\n    float pattern_b = cos(length(p_b * 12.0 + u_time * 0.25) - u_time * 0.08);\n\n    // Combine patterns, normalize to [0, 1] for color mapping\n    float final_pattern = (pattern_a + pattern_b);\n    final_pattern = (final_pattern + 2.0) * 0.25; // Map theoretical [-2, 2] to [0, 1]\n\n    // Deep, subtle color shifts\n    vec3 base_color = vec3(0.05, 0.1, 0.25); // Dark blue-purple base\n    vec3 accent_color = vec3(0.5, 0.25, 0.1); // Muted orange-red accent\n\n    // Mix colors based on pattern and subtle time/radial shift for micro-animations\n    float color_mix_factor = final_pattern + sin(u_time * 0.04 + dist * 3.0) * 0.1;\n    color_mix_factor = clamp(color_mix_factor, 0.0, 1.0);\n    vec3 col = mix(base_color, accent_color, color_mix_factor);\n\n    // Add a subtle central glow, contributing to multi-stage radial falloff\n    col += vec3(0.08, 0.05, 0.02) * (1.0 / (1.0 + pow(dist, 4.0) * 8.0));\n\n    // Overall radial falloff for profound softness and zero visual friction\n    float overall_softness_damping = 1.0 - smoothstep(0.4, 1.0, dist);\n    overall_softness_damping = pow(overall_softness_damping, 1.5); // Enhance softness towards edges\n    col *= overall_softness_damping;\n\n    // Apply a slight gamma correction for richness and depth\n    col = pow(col, vec3(1.1));\n\n    gl_FragColor = vec4(col, 1.0);\n}\n```",
+      "poetic_statement": "The universe is a delicate interplay of unseen forces, where every ripple in the fabric of existence softly influences another, creating a nexus of quiet, intertwined destinies.",
+      "generation": 2,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Novel 'quantum entanglement' feedback system",
+        "two mutually warping low-frequency harmonic wave fields",
+        "global time-evolving Simplex noise for interaction strength",
+        "multi-stage radial falloff damping",
+        "deep",
+        "subtle color shifts."
+      ]
+    },
+    {
+      "id": "sketch-gen3-1",
+      "title": "Ethereal Weave Nexus",
+      "type": "evolutionary",
+      "hypothesis": "Multi-layered feedback intertwined with mutually warping harmonic fields, dynamically modulated by low-frequency Simplex noise, will generate profoundly emergent, self-organizing organic patterns with inherent grace and low visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The universe's unseen threads, woven by the dance of quantum probabilities, reveal a shimmering, breathing tapestry where form and void softly coalesce.",
+      "generation": 3,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Evolved 'Chaotic Serenity Nexus' feedback",
+        "multi-layered self-referential damping",
+        "mutually warping coordinate spaces",
+        "interconnected low-frequency Simplex noise fields",
+        "bio-luminescent color palette",
+        "slow emergent animation",
+        "radial falloff damping."
+      ]
+    },
+    {
+      "id": "sketch-gen3-2",
+      "title": "Subtle Chrono-Warp",
+      "type": "evolutionary",
+      "hypothesis": "Integrating time-dependent, iterative displacement feedback with two mutually warping coordinate systems, enhanced by context-sensitive damping based on local pattern density, will create gracefully unfolding, complex temporal emergent forms.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Time itself becomes a sculptor, gently bending the fabric of space, revealing transient, intricate patterns that bloom and recede like cosmic whispers.",
+      "generation": 3,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Iterative time-dependent displacement feedback",
+        "two mutually warping harmonic fields",
+        "context-sensitive damping based on pattern density",
+        "global low-frequency Simplex noise for warp strength",
+        "refined color transitions."
+      ]
+    },
+    {
+      "id": "sketch-gen3-3",
+      "title": "Harmonic Flux Convergence",
+      "type": "evolutionary",
+      "hypothesis": "Utilizing harmonic functions (sine/cosine) as dynamic modulators within a multi-stage iterative feedback loop, coupled with novel damping functions that converge patterns towards a central, evolving nexus, will produce a complex, yet serene, organic flow.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "At the heart of stillness, unseen currents converge, guided by an ancient rhythm, weaving a silent, living tapestry of light and shadow.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Multi-stage iterative UV displacement feedback",
+        "harmonic functions as dynamic modulators",
+        "novel convergence damping",
+        "low-frequency Simplex noise for global perturbation",
+        "soft",
+        "desaturated color palette",
+        "micro-animations."
+      ]
+    },
+    {
+      "id": "sketch-gen3-4",
+      "title": "Gestalt Flow Systems",
+      "type": "evolutionary",
+      "hypothesis": "A system of three interconnected feedback loops, each with its own spatial warping function influenced by the others, and a global damping function responsive to overall system energy, will exhibit profound Gestalt-like emergent forms.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "From the interplay of unseen forces, a unified form emerges, greater than the sum of its parts, breathing with a quiet, self-aware grace.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Three interconnected feedback loops",
+        "mutually influencing spatial warping functions",
+        "global system energy-responsive damping",
+        "low-frequency noise for subtle perturbation",
+        "fluid",
+        "interconnected forms",
+        "deep",
+        "subtle color shifts."
+      ]
+    },
+    {
+      "id": "sketch-gen3-5",
+      "title": "Resonance Cascade Damping",
+      "type": "evolutionary",
+      "hypothesis": "Implementing a multi-layered, resonance-based damping function that amplifies or attenuates feedback based on local harmonic phase alignment will lead to intricate, self-regulating emergent patterns with enhanced depth and controlled complexity.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Every whisper in the void finds its echo, creating a symphony of subtle resonances that sculpt the fabric of reality into fleeting, beautiful forms.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Multi-layered resonance-based damping",
+        "local harmonic phase alignment detection",
+        "iterative displacement feedback",
+        "dual mutually warping coordinate spaces",
+        "soft",
+        "shimmering color palette",
+        "intricate self-regulating patterns."
+      ]
+    },
+    {
+      "id": "sketch-gen3-6",
+      "title": "Veiled Luminescence Remixed",
+      "type": "directive",
+      "hypothesis": "Iterative displacement feedback, controlled by a novel, radially-attenuated damping function that enhances central luminescence, will guide the emergence of soft, glowing organic structures with low visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "From the heart of a veiled light, delicate forms slowly unfurl, breathing a soft glow into the surrounding ether.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Iterative UV displacement feedback",
+        "novel radially-attenuated damping",
+        "central luminescence",
+        "soft",
+        "diffused light",
+        "micro-animations",
+        "gentle color transitions."
+      ]
+    },
+    {
+      "id": "sketch-gen3-7",
+      "title": "Subaquatic Current Weave",
+      "type": "directive",
+      "hypothesis": "A directed application of low-frequency harmonic waves to simulate subtle fluid currents within a feedback system, augmented by a gentle dissipation damping, will create a convincing, serene subaquatic flow aesthetic.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Beneath the surface, currents unseen sculpt the water into transient patterns, a silent dance of light and shadow, forever in motion.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Low-frequency harmonic wave fields simulating fluid currents",
+        "iterative UV displacement feedback",
+        "gentle dissipation damping",
+        "soft blue-green color palette",
+        "slow",
+        "undulating animation."
+      ]
+    },
+    {
+      "id": "sketch-gen3-8",
+      "title": "Nebula Bloom",
+      "type": "directive",
+      "hypothesis": "Nested feedback loops, where outer loops influence inner loop parameters, combined with deeply integrated soft gradient attenuation and low-frequency noise for organic texture, will generate large, evolving nebulae-like forms.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "In the cosmic nursery, nascent stars paint the void with hues of creation, a slow, gentle bloom of light and dust.",
+      "generation": 3,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Nested feedback loops",
+        "soft gradient attenuation",
+        "low-frequency Simplex noise for organic texture",
+        "deep space color palette",
+        "slow",
+        "blooming animation",
+        "large-scale emergent forms."
+      ]
+    },
+    {
+      "id": "sketch-gen3-9",
+      "title": "Hyper-Dimensional Phase Lock",
+      "type": "mutation",
+      "hypothesis": "**By introducing a 'phase-lock' mechanism within a multi-layered, mutually warping coordinate space feedback system, where the warp strength dynamically adjusts to minimize local pattern deviation, we can induce the emergence of quasi-stable, self-correcting organic structures that resist chaotic dissolution.**",
+      "glsl": "```glsl\nprecision mediump float;\n\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse; // Not directly used for core logic, but available for future mutations\n\n// A simple hash function for 2D input, float output\nfloat hash(vec2 p) {\n    p = fract(p * vec2(5.3983, 5.4427));\n    p += dot(p.yx, p.xy + 19.19);\n    return fract(p.x * p.y);\n}\n\n// 2D Value Noise function\nfloat noise(vec2 p) {\n    vec2 i = floor(p);\n    vec2 f = fract(p);\n\n    // Smoothstep interpolation\n    f = f * f * (3.0 - 2.0 * f);\n\n    // Four corners of the grid cell\n    float a = hash(i);\n    float b = hash(i + vec2(1.0, 0.0));\n    float c = hash(i + vec2(0.0, 1.0));\n    float d = hash(i + vec2(1.0, 1.0));\n\n    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);\n}\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect correction\n    uv -= 0.5; // Center the coordinates\n\n    vec2 p = uv * 2.5; // Initial scale for the coordinate system\n\n    float time = u_time * 0.1; // Slower time for subtle animation\n\n    // Parameters for phase-lock and warping\n    float freq_base = 3.0;\n    float freq_warp_mult = 1.8;\n    float warp_strength_base = 0.15;\n    float damping_factor_mult = 0.8; // How much the \"deviation\" affects damping\n\n    float prev_val = 0.0; // Stores the 'phase' value from the previous iteration\n\n    // Multi-layered feedback loop for emergent organic patterns\n    for (int i = 0; i < 7; ++i) { // 7 iterations for deep, self-referential feedback\n        float fi = float(i);\n        float scale = freq_base + fi * freq_warp_mult;\n        \n        // Calculate a 'phase' value at the current point 'p'\n        // This value represents the local pattern state\n        float n_val = noise(p * scale + vec2(time * 0.5, time * 0.3));\n        n_val += noise(p * scale * 0.7 - vec2(time * 0.2, time * 0.4)) * 0.5;\n        n_val = fract(n_val); // Keep it in [0,1] for phase interpretation\n\n        // Calculate 'local pattern deviation' from the previous iteration's value/phase.\n        // If the pattern changes rapidly (high deviation), it indicates instability.\n        float deviation = abs(n_val - prev_val);\n        // Smoothly map deviation to a damping factor. High deviation means high damping.\n        deviation = smoothstep(0.0, 0.5, deviation); \n\n        // Dynamic warp strength adjustment (the 'phase-lock' mechanism):\n        // If deviation is high, warp strength is reduced (damped) to resist chaotic dissolution.\n        // This acts as a self-correction, attempting to 'lock' the pattern by reducing\n        // movement when it becomes unstable.\n        float current_warp_strength = warp_strength_base * (1.0 - deviation * damping_factor_mult);\n        current_warp_strength = max(0.0, current_warp_strength); // Ensure non-negative strength\n\n        // Generate a warp vector based on the current local phase and time\n        // This makes the warp direction and magnitude responsive to the pattern itself.\n        vec2 warp_offset = vec2(\n            sin(n_val * 6.28318 * 2.0 + time * 0.8 + p.y * 1.5),\n            cos(n_val * 6.28318 * 2.0 + time * 0.6 + p.x * 1.2)\n        );\n        warp_offset = normalize(warp_offset) * current_warp_strength;\n\n        // Introduce subtle rotational variation to the warp based on iteration and time\n        warp_offset = mix(warp_offset, warp_offset.yx * vec2(-1.0, 1.0), sin(fi * 0.3 + time * 0.1) * 0.5 + 0.5);\n\n        // Apply the warp to 'p', making it a mutually warping coordinate space.\n        // The strength of the warp also oscillates slightly per iteration.\n        p += warp_offset * (0.5 + 0.5 * sin(fi * 0.5 + time * 0.2));\n\n        // Store the current 'phase' value for the next iteration's deviation calculation\n        prev_val = n_val;\n    }\n\n    // Final pattern generation using the highly warped coordinate 'p'\n    float final_val = noise(p * 5.0 + time * 0.1);\n    final_val += noise(p * 8.0 + time * 0.2) * 0.5;\n    final_val += noise(p * 12.0 + time * 0.3) * 0.25;\n    final_val = pow(final_val, 1.5); // Enhance contrast softly for a delicate look\n\n    // Complex color gradients for soft, low-friction aesthetics\n    vec3 color1 = vec3(0.05, 0.1, 0.2); // Deep oceanic blue\n    vec3 color2 = vec3(0.1, 0.3, 0.4); // Medium blue-green\n    vec3 color3 = vec3(0.2, 0.5, 0.6); // Cyan\n    vec3 color4 = vec3(0.6, 0.8, 0.7); // Light green-blue\n    vec3 color5 = vec3(0.9, 0.95, 0.9); // Pale yellow-green, almost white\n\n    vec3 final_color = mix(color1, color2, smoothstep(0.0, 0.25, final_val));\n    final_color = mix(final_color, color3, smoothstep(0.2, 0.45, final_val));\n    final_color = mix(final_color, color4, smoothstep(0.4, 0.7, final_val));\n    final_color = mix(final_color, color5, smoothstep(0.65, 0.9, final_val));\n\n    // Add a subtle glow/bloom effect, enhancing luminescence\n    final_color += final_color * final_val * 0.5;\n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n```",
+      "poetic_statement": "Beyond the veil of perception, dimensions intertwine, seeking equilibrium, birthing forms that flicker into existence, then hold their breath against the currents of change.",
+      "generation": 3,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Multi-layered mutually warping coordinate spaces",
+        "novel 'phase-lock' damping mechanism",
+        "dynamic warp strength adjustment",
+        "deep feedback loops",
+        "low-frequency noise for subtle perturbation",
+        "quasi-stable emergent patterns",
+        "complex color gradients."
+      ]
+    },
+    {
+      "id": "sketch-gen3-10",
+      "title": "Cognitive Resonance Feedback",
+      "type": "mutation",
+      "hypothesis": "**Employing a novel 'cognitive resonance' feedback architecture where multiple, distinct pattern generators are interconnected via a weighted adjacency matrix, and their outputs recursively feed into each other's modulation parameters, will lead to the emergence of highly abstract, adaptive, and self-modulating visual 'thought-forms'.**",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Within the silent chambers of thought, patterns echo and intertwine, giving rise to fleeting visions, a dance of pure consciousness made manifest.",
+      "generation": 3,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Novel 'cognitive resonance' feedback architecture",
+        "weighted adjacency matrix for inter-pattern modulation",
+        "recursive parameter feeding",
+        "highly abstract emergent forms",
+        "adaptive self-modulation",
+        "subtle",
+        "evolving color shifts",
+        "low-frequency noise for network perturbation."
+      ]
+    },
+    {
+      "id": "sketch-gen4-1",
+      "title": "Resonant Field Syntropy",
+      "type": "evolutionary",
+      "hypothesis": "By integrating a multi-harmonic field driven by dynamic, time-modulated frequency components with a spatially adaptive damping mechanism, we can induce a state of 'syntropic' self-organization, where patterns coalesce and stabilize against entropic forces, revealing emergent, quasi-crystalline structures.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Within the subtle hum of existence, resonant fields converge, weaving structures of ephemeral grace, each form a fleeting testament to a universe in constant, gentle self-assembly.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Multi-harmonic resonant fields",
+        "dynamic frequency modulation based on system activity",
+        "spatially adaptive damping",
+        "iterative feedback",
+        "low-frequency Simplex noise for global perturbation",
+        "emergent quasi-crystalline patterns",
+        "refined color gradients."
+      ]
+    },
+    {
+      "id": "sketch-gen4-2",
+      "title": "Adaptive Phase Nexus",
+      "type": "evolutionary",
+      "hypothesis": "Evolving the 'phase-lock' mechanism to incorporate cross-layer phase synchronization where the phase offset of one warping layer is dynamically informed by the emergent phase state of another, will lead to unprecedented inter-dependent pattern evolution and self-correcting systemic stability.",
+      "glsl": "```glsl\nprecision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\n\n// A simple hash function for 1D input\nfloat hash11(float p) {\n    p = fract(p * .1031);\n    p *= p + 33.33;\n    p = fract(p * p);\n    return p;\n}\n\n// 2D value noise function\nfloat noise(vec2 p) {\n    vec2 ip = floor(p);\n    vec2 fp = fract(p);\n    fp = fp * fp * (3.0 - 2.0 * fp); // Smoothstep interpolation curve\n\n    float h00 = hash11(ip.x + ip.y * 57.0);\n    float h10 = hash11(ip.x + 1.0 + ip.y * 57.0);\n    float h01 = hash11(ip.x + (ip.y + 1.0) * 57.0);\n    float h11 = hash11(ip.x + 1.0 + (ip.y + 1.0) * 57.0);\n\n    float res = mix(mix(h00, h10, fp.x), mix(h01, h11, fp.x), fp.y);\n    return res;\n}\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n\n    vec2 p = uv; // Working coordinate for iterative warping\n\n    float total_phase_offset = 0.0; // Accumulates emergent phase state for cross-layer synchronization\n    float base_freq = 3.0;\n    float base_amp = 0.08;\n    float noise_amp = 0.5;\n    float phase_sync_factor = 3.0; // Strength of cross-layer phase synchronization\n\n    // Deep iterative feedback for multi-layered mutually warping coordinate spaces\n    for (int i = 0; i < 4; i++) {\n        float t = u_time * 0.1 + float(i) * 0.1; // Time evolution for each layer\n        \n        // Low-frequency noise for subtle perturbation\n        vec2 N = vec2(noise(p * 0.5 + t * 0.1), noise(p * 0.6 + t * 0.15)) * noise_amp;\n        \n        float current_phase_base = t * 5.0; // Base time-driven phase\n        \n        // Adaptive feedback mechanism: Phase offset dynamically informed by emergent state of previous layers\n        float dynamic_phase_offset = total_phase_offset * phase_sync_factor; \n\n        // Warp vector based on current position, time, noise, and adaptive phase offset\n        vec2 warp_vec = sin(p * base_freq + current_phase_base + dynamic_phase_offset + N);\n        \n        // Apply warp to coordinate space\n        p += warp_vec * base_amp;\n\n        // Update total_phase_offset based on the emergent state of this warp layer\n        // The emergent state is derived from the warped coordinate's projection onto a direction.\n        total_phase_offset += dot(p, normalize(vec2(1.0, 0.7))) * 0.5; \n        total_phase_offset = fract(total_phase_offset); // Keep phase offset within a [0, 1) range for stability\n\n        // Dynamic warp strength: evolve frequency and amplitude for subsequent layers\n        base_freq *= 1.2; \n        base_amp *= 0.8; \n    }\n\n    // Final pattern generation on the highly warped coordinate space\n    // Creating a soft, undulating pattern for serenity\n    float f = 0.0;\n    f += sin(p.x * 12.0 + u_time * 0.3);\n    f += cos(p.y * 10.0 + u_time * 0.4);\n    f += sin(p.x * 8.0 + p.y * 5.0 + u_time * 0.5);\n    f = f / 3.0; // Normalize roughly to [-1, 1]\n    f = f * 0.5 + 0.5; // Map to [0, 1] for coloring\n\n    // Complex color gradients for unwavering serenity and low visual friction\n    vec3 col1 = vec3(0.05, 0.1, 0.2); // Deep blue\n    vec3 col2 = vec3(0.2, 0.4, 0.5); // Teal\n    vec3 col3 = vec3(0.6, 0.7, 0.8); // Light blue/grey\n    vec3 col4 = vec3(0.9, 0.8, 0.7); // Warm beige\n\n    // Multi-stage color mixing with smooth transitions\n    vec3 color_a = mix(col1, col2, smoothstep(0.0, 0.5, f));\n    vec3 color_b = mix(col3, col4, smoothstep(0.5, 1.0, f));\n    vec3 final_color = mix(color_a, color_b, smoothstep(0.3, 0.7, f));\n    \n    // Slight overall desaturation and brightening for an ethereal, low-friction feel\n    final_color = mix(final_color, vec3(dot(final_color, vec3(0.333))), 0.1); \n    final_color *= 1.05;\n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n```",
+      "poetic_statement": "Interwoven realities dance in synchronized rhythm, each layer a mirror to the next, creating a nexus where form and flow are born from shared, adaptive breath.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Enhanced 'phase-lock' mechanism with cross-layer phase synchronization",
+        "multi-layered mutually warping coordinate spaces",
+        "dynamic warp strength",
+        "deep iterative feedback",
+        "low-frequency noise for subtle perturbation",
+        "emergent inter-dependent patterns",
+        "complex color gradients."
+      ]
+    },
+    {
+      "id": "sketch-gen4-3",
+      "title": "Cognitive Damping Cascade",
+      "type": "evolutionary",
+      "hypothesis": "By implementing a 'cognitive damping' feedback loop where the intensity of inter-pattern modulation (from a weighted adjacency matrix) is recursively attenuated based on the rate of change of emergent forms, we can achieve systems that self-regulate their complexity, preventing chaotic collapse and fostering sustained, intricate evolution.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Thoughts cascade and softly settle, each resonance dampened by the wisdom of its own unfolding, revealing a tapestry of consciousness in serene, self-governed flux.",
+      "generation": 4,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Evolved 'cognitive resonance' with rate-of-change-based damping",
+        "weighted adjacency matrix for inter-pattern modulation",
+        "recursive parameter feeding",
+        "adaptive self-modulation",
+        "subtle",
+        "evolving color shifts",
+        "low-frequency noise for network perturbation."
+      ]
+    },
+    {
+      "id": "sketch-gen4-4",
+      "title": "Entangled Flow Architectures",
+      "type": "evolutionary",
+      "hypothesis": "Introducing entangled flow fields where the vector field guiding coordinate displacement is itself dynamically generated and modulated by the divergence or curl of another independent, emergent field, will produce novel, non-linear flow patterns and highly organic, self-sculpting forms.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Invisible currents intertwine, each influencing the path of the other, sculpting ephemeral architectures from the very fabric of movement, a silent ballet of emergent form.",
+      "generation": 4,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Entangled flow fields",
+        "dynamic vector field generation",
+        "modulation by divergence/curl of emergent patterns",
+        "multi-layered displacement",
+        "iterative feedback",
+        "low-frequency harmonic drivers",
+        "context-sensitive damping",
+        "smooth organic evolution."
+      ]
+    },
+    {
+      "id": "sketch-gen4-5",
+      "title": "Recursive Attenuation Matrix",
+      "type": "evolutionary",
+      "hypothesis": "By employing a recursive attenuation matrix where feedback coefficients are not static but are themselves a function of the aggregate pattern activity across multiple spatial scales, we can discover systems that exhibit scale-invariant self-organization and adaptive resilience.",
+      "glsl": "```glsl\n#ifdef GL_ES\nprecision mediump float;\n#endif\n\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\n\n// A simple 2D hash function for pseudo-randomness, crucial for organic drivers\nfloat hash12(vec2 p) {\n    vec3 p3  = fract(vec3(p.xyx) * .1031);\n    p3 += dot(p3, p3.yzx + 33.33);\n    return fract((p3.x + p3.y) * p3.z);\n}\n\n// Low-frequency Fractional Brownian Motion (fBm) for organic, dynamic drivers\n// This generates a coherent, multi-scale noise pattern that evolves over time.\nfloat fbm(vec2 p, float time) {\n    float f = 0.0;\n    // Introduce a subtle, harmonic drift to the noise field\n    p += vec2(sin(time * 0.05), cos(time * 0.07)) * 0.1;\n    f += hash12(p * 1.0) * 0.5;\n    f += hash12(p * 2.0) * 0.25;\n    f += hash12(p * 4.0) * 0.125;\n    f += hash12(p * 8.0) * 0.0625;\n    return f / (0.5 + 0.25 + 0.125 + 0.0625); // Normalize the sum\n}\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect correction\n    uv -= 0.5; // Center the UV coordinates\n\n    vec3 accumulated_field = vec3(0.0);\n    float total_activity_sum = 0.0; // Tracks the aggregate pattern activity for adaptive feedback\n\n    // Global perturbation based on mouse and time for subtle system steering\n    vec2 global_offset = (u_mouse.xy / u_resolution.xy - 0.5) * 0.2;\n    global_offset += vec2(sin(u_time * 0.1), cos(u_time * 0.08)) * 0.05;\n\n    int num_iterations = 10; // Number of recursive feedback steps, defining systemic depth\n\n    for (int i = 0; i < num_iterations; ++i) {\n        float iter_time = u_time * (0.5 + float(i) * 0.02); // Time varies per iteration for dynamic evolution\n        vec2 current_uv_scale = uv * (1.0 + float(i) * 0.3); // Multi-scale spatial feedback\n        current_uv_scale += global_offset;\n\n        // Harmonic driver: Base \"energy\" derived from multi-scale noise\n        float base_energy = fbm(current_uv_scale, iter_time);\n        base_energy = pow(base_energy, 2.0); // Sharpen contrast for more defined structures\n\n        // --- Adaptive Feedback Mechanism: Recursive Attenuation Matrix ---\n        // Calculate an \"adaptive attenuation factor\" based on the *current* total activity.\n        // Higher activity leads to greater attenuation (weaker feedback), preventing runaway growth.\n        // This is a self-regulating mechanism for adaptive resilience.\n        float adaptive_attenuation = smoothstep(0.0, 1.0, total_activity_sum * 0.5);\n        \n        // Feedback strength is inversely proportional to attenuation, modulated by a resonant driver.\n        // The sine wave term introduces resonant interactions, where feedback strength oscillates\n        // based on activity, fostering emergent self-organization and complexity.\n        float feedback_strength = 1.0 - adaptive_attenuation; \n        feedback_strength *= (1.0 + sin(total_activity_sum * 5.0 + u_time * 0.2) * 0.15);\n        feedback_strength = clamp(feedback_strength, 0.0, 1.0); // Ensure valid range\n\n        // --- Dynamic & Resonant System Drivers for Input Signal ---\n        // Combine base energy with harmonic waves to create a rich, evolving input signal.\n        float input_signal = base_energy;\n        input_signal += sin(dot(current_uv_scale * 5.0, vec2(1.0, 2.0)) + iter_time * 0.7) * 0.1;\n        input_signal += cos(dot(current_uv_scale * 8.0, vec2(2.0, 1.0)) + iter_time * 0.9) * 0.1;\n        input_signal = fract(input_signal * 2.0); // Introduce sharper, cellular patterns without high frequency noise\n\n        // Accumulate into the field with adaptive feedback and channel-specific phase shifts\n        accumulated_field.r += input_signal * feedback_strength * (0.8 + sin(iter_time * 0.1 + 0.0) * 0.2);\n        accumulated_field.g += input_signal * feedback_strength * (0.8 + sin(iter_time * 0.1 + 2.0) * 0.2);\n        accumulated_field.b += input_signal * feedback_strength * (0.8 + sin(iter_time * 0.1 + 4.0) * 0.2);\n\n        // Update the aggregate activity for the next iteration's adaptive attenuation calculation\n        total_activity_sum = dot(accumulated_field, vec3(0.333)); // Average brightness\n        total_activity_sum = clamp(total_activity_sum, 0.0, 1.0); // Keep normalized\n    }\n\n    // --- Unwavering Serenity & Low Visual Friction: Final Colorization ---\n    vec3 final_color = accumulated_field / float(num_iterations); // Normalize by iterations\n\n    // Smoothstep and power for gentle contrast, soft glow, and refined transitions\n    final_color = smoothstep(vec3(0.0), vec3(1.0), final_color);\n    final_color = pow(final_color, vec3(1.2)); \n\n    // Soft gradient attenuation (vignette effect) to focus attention and enhance depth\n    float dist_sq = dot(uv, uv);\n    float vignette = smoothstep(0.5, 0.1, dist_sq); // Darken edges gently\n    final_color *= vignette;\n\n    // Elegant color mapping for a serene, contemplative aesthetic\n    vec3 color_a = vec3(0.05, 0.10, 0.15); // Deep, cool base\n    vec3 color_b = vec3(0.75, 0.85, 0.95); // Bright, ethereal highlights\n    vec3 color_c = vec3(0.30, 0.50, 0.45); // Soft, organic mid-tones (greenish-cyan)\n    vec3 color_d = vec3(0.90, 0.70, 0.60); // Warm, subtle accents\n\n    vec3 output_color = mix(color_a, color_b, final_color.r);\n    output_color = mix(output_color, color_c, final_color.g * 0.7); \n    output_color = mix(output_color, color_d, final_color.b * 0.5);\n\n    gl_FragColor = vec4(output_color, 1.0);\n}\n```",
+      "poetic_statement": "Within the quiet hum of recursive echoes, patterns emerge, their strength and form shaped by the collective whispers of past and present, a serene dance of self-discovery across scales.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Recursive attenuation matrix",
+        "feedback coefficients as function of aggregate pattern activity",
+        "multi-scale spatial feedback",
+        "adaptive resilience",
+        "emergent scale-invariant organization",
+        "harmonic drivers",
+        "soft gradient attenuation."
+      ]
+    },
+    {
+      "id": "sketch-gen4-6",
+      "title": "Holographic Resonator",
+      "type": "directive",
+      "hypothesis": "By creating a holographic feedback loop where projected 'light rays' from a virtual 3D scene are recursively warped and re-projected based on their local interaction with an emergent 2D pattern, we can simulate complex interference behaviors and generate profound, layered organic forms.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "A hidden light sculpts reality, its echoes weaving through unseen dimensions, creating transient holograms of pure form, born from the interplay of light and shadow.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Holographic feedback loop",
+        "virtual 3D ray projection",
+        "recursive warping based on 2D pattern interaction",
+        "simulated interference",
+        "multi-layered organic forms",
+        "low-frequency drivers",
+        "soft color transitions."
+      ]
+    },
+    {
+      "id": "sketch-gen4-7",
+      "title": "Neural Oscillatory Weave",
+      "type": "directive",
+      "hypothesis": "Implementing a neural oscillatory network where each 'node' is a local field oscillating with dynamic frequency and amplitude, and these oscillations mutually influence adjacent nodes based on a simple 'synaptic' rule, will lead to the emergence of complex, brain-like wave patterns and self-organizing weaves.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Like silent neural pathways, intricate waves of thought ripple and intertwine, weaving a delicate tapestry of emergent awareness within the mind's tranquil expanse.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Neural oscillatory network",
+        "dynamic frequency and amplitude modulation",
+        "local field interactions",
+        "'synaptic' influence rules",
+        "emergent wave patterns",
+        "self-organizing weaves",
+        "low-frequency drivers",
+        "serene visual aesthetic."
+      ]
+    },
+    {
+      "id": "sketch-gen4-8",
+      "title": "Contextual Phase Shifting",
+      "type": "directive",
+      "hypothesis": "By designing a system where the phase of multiple harmonic drivers is contextually shifted based on the local curvature or density of the emergent pattern itself, we can achieve highly responsive, self-sculpting forms that adapt their internal dynamics to their own evolving geometry.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nauniform vec2 u_resolution;\nauniform vec2 u_mouse;\n\nfast float hash21(vec2 p) {\n    p = fract(p * vec2(123.34, 456.21));\n    p.c += dot(p, p + 45.32);\n    return fract(p.x * p.y);\u0003}\n\u0006void main() {\n    vec2 uv = gl_FragCoord.x/  u_resolution.xy;\n    uv = uv * 2.0 - 1.0; // Center at 0, range [-1, 1]\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n   \n    float t = u_time * 0.08; // Gentle time andation\n   \n    float accumulated_pattern = 0.0;\n    float total_weight = 0.0;\n  \n    vec2 current_uv = uv;\n    float current_freq_scale = 1.0;\n    float phse_fiedback_strength = 2.0; // How much the pattern influences uts own phase\n\n    for  int i = 0; i < 6; ++ i) {\n        float f = float(i) * 3.0 + 4.0; // Base frequency for this layer\n        float weight = 1.0 / (float(i) + 1.0); // Attenuate higher layers\n \n        // Dynamic direction and offset based on time and iteration\n        vec2 dir = vec2(cos(t * (0.1 + float(i)*0.02)), sin(t * (0.15 + float(i)*0.03)));\n        vec2 offset = vec2(hash21(vec2(float(i), 0.0) + t * 0.1) - 0.5, hash21(vec2(0.0, float(i)) - t * 0.05) - 0.5);\n \n        // Base spatial phase, influenced by current_uv (which can be warped)\n        float spatial_phase = dot(current_uv * f * current_freq_scale, dir + offset * 0.5);\n\n        // Low-frequency noise for orgonic variation and additional phase modulation\n        float noise_a = (hash21(current_uv * 0.7 + t * 0.1) - 0.5) * 2.0;\n        float noise_b = (hash21(urient_uv * 1.5 - t * 0.05) - 0.5) * 2.0;\n        float noise_mod = (noise_a * 0.7 + noise_b * 0.3) * 0.8; // Attenuate noise influence\n  \n        // CONTEXTUAL PHASE SHIFTING: \n        // The phase is shifted based on the 'accumulated_pattern' from previous iterations.\n        // This is the core adaptive feedback.\n        float contextual_phase_shift = accumulated_pattern * phse_fiedback_strength;\n  \n        float wave = sin(spatial_phase + noise_mod * 1.5 + contextual_phase_shift);\n  \n        // Add to the accumulated pattern\n        accumulated_pattern += wave * weight;\n        total_weight += weight;\n  \n        // Adaptive Damping/Intensity:\n        // Adjust the phase feedback strength for subsequent layers based on the current wave's magnitude.\n        // This introduces a 'self-correction' or 'adaptive damping' to prevent runaway feedback\n        phse_fiedback_strength *= (1.0 - abs(wave) * 0.1); // Strong waves slightly reduce subsequent feedback\n        phse_fiedback_strength = max(phse_fiedback_strength, 0.5); // Prevent it from going too low\n\n        // Subtle warping of UV for the next iteration based on the current wave\n        // This creates self-sculpting geometry.\n        current_uv += dir * wave * (0.005 / (float(i) + 1.0)); // Warping decreases with higher frequencies\n        current_freq_scale *= 1.2; // Increase frequency for next layer\n    }\n\n    // Normalize the accumulated pattern to a [0, 1] range\n    float final_value = (accumulated_pattern / total_weight) * 0.5 + 0.5;\n\n    // Further processing for aesthetic refinement;\n    final_value = pow(final_value, 2.0); // Enhance contrast for softer light areas\n    final_value = mix(final_value, hash21(uv * 10.0 + t * 0.5) * 0.1 + final_value * 0.9, 0.1); // Add subtle texture/grain\n\n    // Serene color mapping\n    vec3 color_a = vec3(0.05, 0.1, 0.15); // Deep blue-grey\n    vec3 color_b = vec3(0.7, 0.65, 0.6);  // Warm grey-peach\n    vec3 color_c = vec3(0.3, 0.4, 0.45);  // Muted teal\n \n    vec3 final_color = mix(color_a, color_b, final_value);\n    // Introduce another color based on a slightly shifted pattern value for richer gradients\n    final_color = mix(final_color, color_c, sin(final_value * 3.14159 * 2.0 + t * 0.15) * 0.5 + 0.5);\n    final_color = mix(final_color, vec3(0.9, 0.8, 0.7), pow(final_value, 8.0)); // Highlight very bright areas\n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n",
+      "poetic_statement": "As patterns emerge, they whisper to the underlying currents, guiding the very rhythm of their own becoming, a silent conversation between form and flux.",
+      "generation": 4,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Contextual phase shifting",
+        "harmonic drivers",
+        "phase modulation by local pattern curvature/density",
+        "self-sculpting forms",
+        "adaptive geometry",
+        "iterative feedback",
+        "low-frequency noise",
+        "subtle animation."
+      ]
+    },
+    {
+      "id": "sketch-gen4-9",
+      "title": "Quantum Entanglement Echoes",
+      "type": "mutation",
+      "hypothesis": "**By simulating a simplified quantum entanglement analogue where two spatially distinct yet mathematically linked 'field states' instantly reflect changes in each other's emergent properties, we predict the discovery of novel, non-local self-organization and synchronized pattern evolution that transcends conventional spatial causality.**",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Echoes from entangled realms, where distant whispers shape the present, revealing a tapestry of synchronized becoming, bound by an unseen, profound connection.",
+      "generation": 4,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Simulated quantum entanglement analogue",
+        "two spatially distinct linked field states",
+        "instant reflection of emergent properties",
+        "non-local self-organization",
+        "synchronized pattern evolution",
+        "deep feedback loops",
+        "harmonic drivers",
+        "serene aesthetic."
+      ]
+    },
+    {
+      "id": "sketch-gen4-10",
+      "title": "Temporal Inversion Resonance",
+      "type": "mutation",
+      "hypothesis": "**Through a novel temporal inversion resonance architecture where a portion of the system's state is recursively fed back from a future predicted state (based on a simple extrapolation model) into its current state, we hypothesize the emergence of 'pre-emptive' self-correction and patterns that exhibit an unusual, anticipatory stability.**",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The future whispers to the present, guiding its unfolding with anticipatory grace, creating forms that resonate with an eerie, knowing tranquility, always a step ahead of chaos.",
+      "generation": 4,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Temporal inversion resonance",
+        "recursive feedback from future predicted state",
+        "simple extrapolation model",
+        "'pre-emptive' self-correction",
+        "anticipatory stability",
+        "novel pattern evolution",
+        "multi-layered feedback",
+        "low visual friction."
+      ]
     }
   ],
   "statistics": {
@@ -210,6 +816,27 @@
         "badCount": 6,
         "successRate": 40,
         "timestamp": "2026-06-27T18:49:59.749Z"
+      },
+      {
+        "generation": 2,
+        "goodCount": 4,
+        "badCount": 6,
+        "successRate": 40,
+        "timestamp": "2026-06-27T19:01:46.965Z"
+      },
+      {
+        "generation": 3,
+        "goodCount": 4,
+        "badCount": 6,
+        "successRate": 40,
+        "timestamp": "2026-06-27T19:23:06.266Z"
+      },
+      {
+        "generation": 4,
+        "goodCount": 4,
+        "badCount": 6,
+        "successRate": 40,
+        "timestamp": "2026-06-27T19:31:17.253Z"
       }
     ],
     "popularTags": [
@@ -218,40 +845,40 @@
         "count": 3
       },
       {
-        "tag": "sin + snoise displacement",
-        "count": 1
+        "tag": "soft",
+        "count": 2
       },
       {
-        "tag": "soft amber overlay.",
-        "count": 1
+        "tag": "multi-layered self-referential damping",
+        "count": 2
       },
       {
-        "tag": "Symmetrical UV warp",
-        "count": 1
+        "tag": "interconnected low-frequency Simplex noise fields",
+        "count": 2
       },
       {
-        "tag": "sin for coordinate manipulation",
-        "count": 1
+        "tag": "bio-luminescent color palette",
+        "count": 2
       },
       {
-        "tag": "base pattern (e.g.",
-        "count": 1
+        "tag": "deep feedback loops",
+        "count": 2
       },
       {
-        "tag": "simple gradient).",
-        "count": 1
+        "tag": "weighted adjacency matrix for inter-pattern modulation",
+        "count": 2
       },
       {
-        "tag": "single sin wave",
-        "count": 1
+        "tag": "recursive parameter feeding",
+        "count": 2
       },
       {
-        "tag": "very slow damping",
-        "count": 1
+        "tag": "adaptive self-modulation",
+        "count": 2
       },
       {
-        "tag": "radial attenuation",
-        "count": 1
+        "tag": "subtle",
+        "count": 2
       }
     ]
   }

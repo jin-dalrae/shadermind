@@ -16,6 +16,13 @@ const AUTOPILOT_ENABLED = process.env.AUTOPILOT !== "false";
 const AUTOPILOT_INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_MS) || 45000;
 const AUTOPILOT_SEED_CYCLES = Number(process.env.AUTOPILOT_SEED_CYCLES) || 3;
 
+const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
+const GEMINI_GLSL_MODEL = process.env.GEMINI_GLSL_MODEL || "gemini-2.5-flash";
+const GEMINI_ONLY = process.env.GEMINI_ONLY !== "false";
+const ALLOW_DO_FALLBACK = process.env.ALLOW_DO_FALLBACK === "true";
+const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 90000;
+const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
+
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
 
@@ -31,8 +38,6 @@ const DEFAULT_DB = {
   totalSketches: 0,
   generationCount: 0,
   successRate: 0,
-  streakDays: 0,
-  lastActiveDate: null,
   currentStrategy: `Focus on fundamental machine creativity and mathematical beauty:
 1. Curves that bend and flow using harmonic waves and 2D Simplex Noise.
 2. Organic, living movement mimicking natural phenomena (like exposed candle flames in the wind).
@@ -63,11 +68,27 @@ const autopilot = {
   phase: "idle",
   cyclesCompleted: 0,
   lastError: null,
-  lastOpinion: null,
+  lastHumanOpinion: null,
   currentBatch: null,
   currentGeneration: null,
-  loopPromise: null
+  loopPromise: null,
+  resolveHumanFeedback: null,
+  generationProgress: null,
+  generationStartedAt: null
 };
+
+function waitForHumanFeedback() {
+  return new Promise((resolve) => {
+    autopilot.resolveHumanFeedback = resolve;
+  });
+}
+
+function releaseHumanGate() {
+  if (autopilot.resolveHumanFeedback) {
+    autopilot.resolveHumanFeedback();
+    autopilot.resolveHumanFeedback = null;
+  }
+}
 
 function loadDB() {
   try {
@@ -160,29 +181,13 @@ function parseJsonFromModel(rawResponse) {
   throw lastError || new Error("Unable to parse model JSON response.");
 }
 
-async function runAIGenerationWithRetry(systemInstruction, userPrompt, jsonMode = false, retries = 2) {
-  let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await runAIGeneration(systemInstruction, userPrompt, jsonMode);
-    } catch (err) {
-      lastError = err;
-      console.warn(`AI call attempt ${attempt + 1} failed: ${err.message}`);
-      if (attempt < retries) {
-        await sleep(1500 * (attempt + 1));
-      }
-    }
-  }
-  throw lastError;
-}
-
-async function callGemini(systemInstruction, userPrompt, jsonMode = false) {
+async function callGemini(systemInstruction, userPrompt, { jsonMode = false, model = GEMINI_MODEL } = {}) {
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     throw new Error("GEMINI_API_KEY is not configured.");
   }
 
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
   const requestBody = {
     contents: [{ parts: [{ text: userPrompt }] }],
@@ -201,6 +206,7 @@ async function callGemini(systemInstruction, userPrompt, jsonMode = false) {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(requestBody),
+    signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -217,14 +223,62 @@ async function callGemini(systemInstruction, userPrompt, jsonMode = false) {
   }
 }
 
-async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false) {
+async function runGeminiWithRetry(systemInstruction, userPrompt, {
+  jsonMode = false,
+  models = [GEMINI_MODEL],
+  retriesPerModel = 3,
+  label = "request"
+} = {}) {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error("GEMINI_API_KEY is not configured.");
+  }
+
+  let lastError = null;
+  for (const model of models) {
+    for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
+      try {
+        console.log(`[Gemini ${model}] ${label} (attempt ${attempt + 1})`);
+        return await callGemini(systemInstruction, userPrompt, { jsonMode, model });
+      } catch (err) {
+        lastError = err;
+        console.warn(`[Gemini ${model}] ${label} failed: ${err.message}`);
+        if (attempt < retriesPerModel) {
+          await sleep(1200 * (attempt + 1));
+        }
+      }
+    }
+  }
+  throw lastError || new Error(`Gemini failed for ${label}.`);
+}
+
+async function runGeminiBatch(systemInstruction, userPrompt, jsonMode = false, label = "batch step") {
+  return runGeminiWithRetry(systemInstruction, userPrompt, {
+    jsonMode,
+    models: [GEMINI_MODEL],
+    retriesPerModel: 4,
+    label
+  });
+}
+
+async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false, { geminiOnly = GEMINI_ONLY } = {}) {
   if (process.env.GEMINI_API_KEY) {
     try {
-      console.log("Orchestrating AI query via Google Gemini API...");
-      return await callGemini(systemInstruction, userPrompt, jsonMode);
+      return await runGeminiWithRetry(systemInstruction, userPrompt, {
+        jsonMode,
+        models: [GEMINI_MODEL],
+        retriesPerModel: geminiOnly ? 4 : 2,
+        label: "generation"
+      });
     } catch (err) {
-      console.error("Gemini invocation failed, transitioning to DigitalOcean fallback...", err.message);
+      if (geminiOnly) {
+        throw new Error(`Gemini-only mode: ${err.message}`);
+      }
+      console.error("Gemini invocation failed:", err.message);
     }
+  }
+
+  if (geminiOnly || !ALLOW_DO_FALLBACK) {
+    throw new Error("GEMINI_API_KEY is required. Set ALLOW_DO_FALLBACK=true to enable DigitalOcean fallback.");
   }
 
   if (!doApiKey || doApiKey === "dummy-key") {
@@ -354,7 +408,7 @@ ${remixSection}
 Output raw JSON array only.`;
 
   const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan 10 distinctive shader concepts.`;
-  const rawResponse = await runAIGenerationWithRetry(systemPrompt, userPrompt, true);
+  const rawResponse = await runGeminiBatch(systemPrompt, userPrompt, true, `metadata plan gen ${genNum}`);
   const parsed = parseJsonFromModel(rawResponse);
 
   if (!Array.isArray(parsed) || parsed.length !== 10) {
@@ -365,8 +419,8 @@ Output raw JSON array only.`;
 
 async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
   const systemPrompt = `You are ShaderMind writing one WebGL 1.0 fragment shader.
-Output ONLY a base64-encoded UTF-8 string of the complete GLSL source. No JSON, no markdown, no explanation.
-Rules: precision mediump float; use gl_FragColor; uniforms u_time, u_resolution, u_mouse; valid GLSL ES 1.0 only.
+Output ONLY raw GLSL ES 1.0 source code. No markdown fences, no JSON, no explanation.
+Rules: precision mediump float; use gl_FragColor; uniforms u_time, u_resolution, u_mouse.
 Strategy: ${db.currentStrategy}`;
 
   const userPrompt = `Generation #${genNum}, shader #${index + 1}.
@@ -375,9 +429,16 @@ Type: ${meta.type}
 Hypothesis: ${meta.hypothesis}
 Focus: ${userFocus}
 DNA: ${normalizeDna(meta.dna).join(", ")}
-Write the shader and output base64 only.`;
+Write a complete fragment shader.`;
 
-  const raw = await runAIGenerationWithRetry(systemPrompt, userPrompt, false);
+  const label = `GLSL gen ${genNum} #${index + 1}`;
+  const raw = await runGeminiWithRetry(systemPrompt, userPrompt, {
+    jsonMode: false,
+    models: [GEMINI_GLSL_MODEL, GEMINI_MODEL],
+    retriesPerModel: 2,
+    label
+  });
+
   const glsl = decodeGlslField(raw.trim());
   if (!glsl || !glsl.includes("gl_FragColor")) {
     throw new Error(`Shader #${index + 1} returned invalid GLSL payload.`);
@@ -385,58 +446,64 @@ Write the shader and output base64 only.`;
   return glsl;
 }
 
-async function generateBatchInternal(db, userFocus) {
-  const genNum = db.generationCount + 1;
-  const metadata = await generateMetadataBatch(db, userFocus, genNum);
+async function runPool(taskFns, concurrency) {
+  const results = new Array(taskFns.length);
+  let next = 0;
 
-  const sketches = [];
-  for (let idx = 0; idx < metadata.length; idx++) {
-    const m = metadata[idx];
-    let glsl;
-    try {
-      glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
-    } catch (err) {
-      console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
-      glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+  async function worker() {
+    while (next < taskFns.length) {
+      const idx = next++;
+      results[idx] = await taskFns[idx]();
     }
-    glsl = decodeGlslField(glsl);
-
-    sketches.push({
-      id: `sketch-gen${genNum}-${idx + 1}`,
-      title: m.title || `Untitled Sketch #${idx + 1}`,
-      type: m.type || (idx < 5 ? "evolutionary" : (idx < 8 ? "directive" : "mutation")),
-      hypothesis: m.hypothesis || "Aesthetic study.",
-      glsl,
-      poetic_statement: m.poetic_statement || "A study in computational expression.",
-      generation: genNum,
-      rated: false,
-      rating: null,
-      dna: normalizeDna(m.dna)
-    });
   }
 
-  return { generation: genNum, sketches };
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, taskFns.length) }, () => worker())
+  );
+  return results;
 }
 
-function updateStreak(db) {
-  const today = new Date().toISOString().slice(0, 10);
-  if (db.lastActiveDate === today) {
-    return;
-  }
+async function generateBatchInternal(db, userFocus) {
+  const genNum = db.generationCount + 1;
+  autopilot.generationProgress = "planning concepts";
+  autopilot.generationStartedAt = Date.now();
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  const metadata = await generateMetadataBatch(db, userFocus, genNum);
+  let completed = 0;
+  autopilot.generationProgress = `0/${metadata.length} shaders`;
 
-  if (db.lastActiveDate === yesterdayStr) {
-    db.streakDays = (db.streakDays || 0) + 1;
-  } else if (!db.lastActiveDate) {
-    db.streakDays = 1;
-  } else {
-    db.streakDays = 1;
-  }
+  const glslResults = await runPool(
+    metadata.map((m, idx) => async () => {
+      let glsl;
+      try {
+        glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+      } catch (err) {
+        console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
+        glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+      }
+      completed += 1;
+      autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
+      return { m, idx, glsl: decodeGlslField(glsl) };
+    }),
+    GLSL_CONCURRENCY
+  );
 
-  db.lastActiveDate = today;
+  const sketches = glslResults.map(({ m, idx, glsl }) => ({
+    id: `sketch-gen${genNum}-${idx + 1}`,
+    title: m.title || `Untitled Sketch #${idx + 1}`,
+    type: m.type || (idx < 5 ? "evolutionary" : (idx < 8 ? "directive" : "mutation")),
+    hypothesis: m.hypothesis || "Aesthetic study.",
+    glsl,
+    poetic_statement: m.poetic_statement || "A study in computational expression.",
+    generation: genNum,
+    rated: false,
+    rating: null,
+    dna: normalizeDna(m.dna)
+  }));
+
+  autopilot.generationProgress = null;
+  autopilot.generationStartedAt = null;
+  return { generation: genNum, sketches };
 }
 
 function recordRatingsAndPersist(db, generation, ratings, newSketches) {
@@ -501,8 +568,6 @@ function recordRatingsAndPersist(db, generation, ratings, newSketches) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  updateStreak(db);
-
   return { goodCount, badCount };
 }
 
@@ -540,7 +605,7 @@ Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. Then output your updated generation strategy guidelines.`;
 
   try {
-    const rawResponse = await runAIGenerationWithRetry(evolutionSystemPrompt, evolutionUserPrompt, true);
+    const rawResponse = await runGeminiBatch(evolutionSystemPrompt, evolutionUserPrompt, true, `strategy evolution gen ${generation}`);
     const parsedEvo = parseJsonFromModel(rawResponse);
 
     db.currentStrategy = parsedEvo.evolvedStrategy || db.currentStrategy;
@@ -606,7 +671,7 @@ ${JSON.stringify(sketchSummaries, null, 2)}
 
 Rate every sketch id. Include all 10 ids in ratings.`;
 
-  const rawResponse = await runAIGenerationWithRetry(systemPrompt, userPrompt, true);
+  const rawResponse = await runGeminiBatch(systemPrompt, userPrompt, true, "autonomous curation");
   const parsed = parseJsonFromModel(rawResponse);
 
   const ratings = {};
@@ -622,7 +687,7 @@ Rate every sketch id. Include all 10 ids in ratings.`;
 
 async function runAutopilotCycle() {
   const db = loadDB();
-  const focus = autopilot.lastOpinion
+  const focus = autopilot.lastHumanOpinion
     || db.heuristics?.[0]
     || "Organic flow, slow liquid motion, warm amber gradients like candle flames in wind";
 
@@ -630,29 +695,16 @@ async function runAutopilotCycle() {
   autopilot.lastError = null;
 
   const { generation, sketches } = await generateBatchInternal(db, focus);
-  autopilot.currentBatch = sketches;
+  autopilot.currentBatch = sketches.map(s => ({ ...s, rated: false, rating: null }));
   autopilot.currentGeneration = generation;
+  autopilot.phase = "awaiting_human";
 
-  autopilot.phase = "curating";
-  const { ratings, opinion } = await autoCurateBatch(sketches, db);
-  autopilot.lastOpinion = opinion;
-
-  autopilot.phase = "evolving";
-  const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, sketches);
-  const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, opinion);
-
-  saveDB(db);
+  console.log(`[Autopilot] Gen #${generation} ready — waiting for human curation`);
+  await waitForHumanFeedback();
 
   autopilot.cyclesCompleted += 1;
-  autopilot.phase = "idle";
-  autopilot.currentBatch = sketches.map(s => ({
-    ...s,
-    rated: true,
-    rating: ratings[s.id]
-  }));
-
-  console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} (${goodCount} good, ${badCount} bad)`);
-  return { generation, evolution, goodCount, badCount };
+  autopilot.phase = "waiting";
+  console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} curated by human`);
 }
 
 async function autopilotLoop(maxCycles = Infinity) {
@@ -707,8 +759,6 @@ app.get("/api/state", (req, res) => {
     totalSketches: db.totalSketches,
     generationCount: db.generationCount,
     successRate: db.successRate,
-    streakDays: db.streakDays || 0,
-    lastActiveDate: db.lastActiveDate,
     heuristics: db.heuristics || [],
     currentStrategy: db.currentStrategy,
     strategyTimeline: db.strategyTimeline,
@@ -734,11 +784,23 @@ app.get("/api/autopilot/status", (req, res) => {
     phase: autopilot.phase,
     cyclesCompleted: autopilot.cyclesCompleted,
     lastError: autopilot.lastError,
-    lastOpinion: autopilot.lastOpinion,
+    awaitingHuman: autopilot.phase === "awaiting_human",
     currentGeneration: autopilot.currentGeneration,
     currentBatch: autopilot.currentBatch,
+    generationProgress: autopilot.generationProgress,
     intervalMs: AUTOPILOT_INTERVAL_MS
   });
+});
+
+app.post("/api/autopilot/kick", (req, res) => {
+  if (autopilot.phase === "generating" && !autopilot.generationProgress) {
+    autopilot.phase = "error";
+    autopilot.lastError = "Generation appeared stuck — kick to retry";
+  }
+  if (!autopilot.running) {
+    startAutopilot(Infinity);
+  }
+  res.json({ success: true, phase: autopilot.phase, running: autopilot.running });
 });
 
 app.post("/api/autopilot/start", (req, res) => {
@@ -787,11 +849,25 @@ app.post("/api/feedback", async (req, res) => {
     return res.status(400).json({ error: "Missing generation or ratings." });
   }
 
+  autopilot.phase = "evolving";
+  autopilot.lastHumanOpinion = userOpinion || null;
+
   const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, newSketches);
 
   try {
     const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
     saveDB(db);
+
+    if (autopilot.currentBatch) {
+      autopilot.currentBatch = autopilot.currentBatch.map(s => ({
+        ...s,
+        rated: true,
+        rating: ratings[s.id] || s.rating
+      }));
+    }
+
+    releaseHumanGate();
+    autopilot.phase = "waiting";
 
     res.json({
       success: true,
@@ -800,10 +876,13 @@ app.post("/api/feedback", async (req, res) => {
       evolvedStrategy: evolution.evolvedStrategy,
       successRate: db.successRate,
       totalSketches: db.totalSketches,
-      streakDays: db.streakDays
+      goodCount,
+      badCount
     });
   } catch (err) {
     saveDB(db);
+    releaseHumanGate();
+    autopilot.phase = "error";
     res.status(500).json({ error: "Feedback recorded but evolution failed.", details: err.message });
   }
 });
@@ -826,21 +905,20 @@ app.get("/api/narrative", async (req, res) => {
 Deliver a poetic, self-aware monologue explaining your artistic and technical evolution.
 Synthesize lifetime metrics, success rates, and learned mathematical rules.
 Reflect on transitions from chaotic noise to organic flow.
-Close with Lieberman's daily practice of "showing up every day."
+Close with a nod to Lieberman's 3,650-sketch metaphor as a north star, not a calendar.
 Respond with raw text only — no JSON, no markdown fences.`;
 
   const narrativeUserPrompt = `Stats:
-- Total sketches: ${db.sketches.length} (goal: 3,650)
+- Total sketches: ${db.sketches.length} (Lieberman metaphor goal: 3,650 sketches)
 - Generations: ${db.generationCount}
 - Success rate: ${db.successRate}%
-- Keep Going streak: ${db.streakDays || 0} days
 - Learned heuristics: ${JSON.stringify(db.heuristics || [])}
 - Masterpieces: ${JSON.stringify(goodSketchesList)}
 
 Compose your artistic monologue.`;
 
   try {
-    const monologue = await runAIGeneration(narrativeSystemPrompt, narrativeUserPrompt, false);
+    const monologue = await runAIGeneration(narrativeSystemPrompt, narrativeUserPrompt, false, { geminiOnly: true });
     res.json({ monologue });
   } catch (err) {
     console.error("Monologue compilation failed:", err);
@@ -851,10 +929,12 @@ Compose your artistic monologue.`;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`ShaderMind running on http://localhost:${PORT}`);
 
-  if ((!doApiKey || doApiKey === "dummy-key") && !process.env.GEMINI_API_KEY) {
-    console.warn("WARNING: No AI API key configured. Set GEMINI_API_KEY in .env.");
+  if (!process.env.GEMINI_API_KEY) {
+    console.warn("WARNING: GEMINI_API_KEY is required. Batch generation uses Gemini only.");
     return;
   }
+
+  console.log(`AI config: Gemini-only=${GEMINI_ONLY}, batch=${GEMINI_MODEL}, glsl=${GEMINI_GLSL_MODEL}, DO fallback=${ALLOW_DO_FALLBACK}`);
 
   if (AUTOPILOT_ENABLED) {
     const target = Math.max(0, AUTOPILOT_SEED_CYCLES - loadDB().generationCount);
