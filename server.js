@@ -2,9 +2,10 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { OpenAI } from "openai";
 import { loadDB, saveDB, createStorage } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
+import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig } from "./lib/ai.js";
+import { parseJsonFromModel } from "./lib/json.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
 import { buildRemixSection, consolidateMemory } from "./lib/memory.js";
 
@@ -19,11 +20,6 @@ const AUTOPILOT_ENABLED = process.env.AUTOPILOT !== "false";
 const AUTOPILOT_INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_MS) || 45000;
 const AUTOPILOT_SEED_CYCLES = Number(process.env.AUTOPILOT_SEED_CYCLES) || 3;
 
-const GEMINI_MODEL = process.env.GEMINI_MODEL || "gemini-2.5-flash";
-const GEMINI_GLSL_MODEL = process.env.GEMINI_GLSL_MODEL || "gemini-2.5-flash";
-const GEMINI_ONLY = process.env.GEMINI_ONLY !== "false";
-const ALLOW_DO_FALLBACK = process.env.ALLOW_DO_FALLBACK === "true";
-const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 90000;
 const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
 const LEARNING_MODE = process.env.LEARNING_MODE || "human";
 const HYBRID_TIMEOUT_MS = Number(process.env.HYBRID_TIMEOUT_MS) || 300000;
@@ -31,12 +27,6 @@ const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
-
-const doApiKey = process.env.DIGITAL_OCEAN_MODEL_ACCESS_KEY || process.env.OPENAI_API_KEY;
-const doClient = new OpenAI({
-  baseURL: "https://inference.do-ai.run/v1",
-  apiKey: doApiKey || "dummy-key",
-});
 
 const autopilot = {
   running: false,
@@ -69,165 +59,6 @@ function normalizeDna(dna) {
   if (Array.isArray(dna)) return dna.map(String).filter(Boolean);
   if (typeof dna === "string") return dna.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
   return ["experiment"];
-}
-
-function stripMarkdownFences(text) {
-  let jsonString = text.trim();
-  if (jsonString.startsWith("```json")) {
-    jsonString = jsonString.substring(7);
-  } else if (jsonString.startsWith("```")) {
-    jsonString = jsonString.substring(3);
-  }
-  if (jsonString.endsWith("```")) {
-    jsonString = jsonString.substring(0, jsonString.length - 3);
-  }
-  return jsonString.trim();
-}
-
-function parseJsonFromModel(rawResponse) {
-  const candidates = [
-    stripMarkdownFences(rawResponse),
-    rawResponse.trim()
-  ];
-
-  const arrayMatch = rawResponse.match(/\[[\s\S]*\]/);
-  if (arrayMatch) candidates.push(arrayMatch[0]);
-
-  const objectMatch = rawResponse.match(/\{[\s\S]*\}/);
-  if (objectMatch) candidates.push(objectMatch[0]);
-
-  let lastError = null;
-  for (const candidate of candidates) {
-    try {
-      return JSON.parse(candidate);
-    } catch (err) {
-      lastError = err;
-    }
-  }
-
-  throw lastError || new Error("Unable to parse model JSON response.");
-}
-
-async function callGemini(systemInstruction, userPrompt, {
-  jsonMode = false,
-  model = GEMINI_MODEL,
-  maxOutputTokens = 8000
-} = {}) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error("GEMINI_API_KEY is not configured.");
-  }
-
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-
-  const requestBody = {
-    contents: [{ parts: [{ text: userPrompt }] }],
-    systemInstruction: { parts: [{ text: systemInstruction }] },
-    generationConfig: {
-      temperature: 0.7,
-      maxOutputTokens,
-    }
-  };
-
-  if (jsonMode) {
-    requestBody.generationConfig.responseMimeType = "application/json";
-  }
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API returned code ${response.status}: ${errorText}`);
-  }
-
-  const data = await response.json();
-  try {
-    return data.candidates[0].content.parts[0].text.trim();
-  } catch (err) {
-    console.error("Failed to parse candidates in Gemini structure:", JSON.stringify(data));
-    throw new Error("Unexpected API response structure from Google Gemini.");
-  }
-}
-
-async function runGeminiWithRetry(systemInstruction, userPrompt, {
-  jsonMode = false,
-  models = [GEMINI_MODEL],
-  retriesPerModel = 3,
-  label = "request",
-  maxOutputTokens = 8000
-} = {}) {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error("GEMINI_API_KEY is not configured.");
-  }
-
-  let lastError = null;
-  for (const model of models) {
-    for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
-      try {
-        console.log(`[Gemini ${model}] ${label} (attempt ${attempt + 1})`);
-        return await callGemini(systemInstruction, userPrompt, { jsonMode, model, maxOutputTokens });
-      } catch (err) {
-        lastError = err;
-        console.warn(`[Gemini ${model}] ${label} failed: ${err.message}`);
-        if (attempt < retriesPerModel) {
-          await sleep(1200 * (attempt + 1));
-        }
-      }
-    }
-  }
-  throw lastError || new Error(`Gemini failed for ${label}.`);
-}
-
-async function runGeminiBatch(systemInstruction, userPrompt, jsonMode = false, label = "batch step") {
-  return runGeminiWithRetry(systemInstruction, userPrompt, {
-    jsonMode,
-    models: [GEMINI_MODEL],
-    retriesPerModel: 4,
-    label
-  });
-}
-
-async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false, { geminiOnly = GEMINI_ONLY } = {}) {
-  if (process.env.GEMINI_API_KEY) {
-    try {
-      return await runGeminiWithRetry(systemInstruction, userPrompt, {
-        jsonMode,
-        models: [GEMINI_MODEL],
-        retriesPerModel: geminiOnly ? 4 : 2,
-        label: "generation"
-      });
-    } catch (err) {
-      if (geminiOnly) {
-        throw new Error(`Gemini-only mode: ${err.message}`);
-      }
-      console.error("Gemini invocation failed:", err.message);
-    }
-  }
-
-  if (geminiOnly || !ALLOW_DO_FALLBACK) {
-    throw new Error("GEMINI_API_KEY is required. Set ALLOW_DO_FALLBACK=true to enable DigitalOcean fallback.");
-  }
-
-  if (!doApiKey || doApiKey === "dummy-key") {
-    throw new Error("Neither GEMINI_API_KEY nor DIGITAL_OCEAN_MODEL_ACCESS_KEY is configured in .env.");
-  }
-
-  console.log("Orchestrating AI query via DigitalOcean Inference (Llama-3.3)...");
-  const completion = await doClient.chat.completions.create({
-    model: "llama3.3-70b-instruct",
-    messages: [
-      { role: "system", content: systemInstruction },
-      { role: "user", content: userPrompt }
-    ],
-    temperature: 0.7,
-    max_completion_tokens: 4000,
-  });
-  return completion.choices[0].message.content.trim();
 }
 
 function buildGenerationPrompts(db, userFocus, genNum) {
@@ -324,7 +155,7 @@ ${remixSection}
 Output raw JSON array only.`;
 
   const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan 10 distinctive shader concepts.`;
-  const rawResponse = await runGeminiBatch(systemPrompt, userPrompt, true, `metadata plan gen ${genNum}`);
+  const rawResponse = await runInferenceBatch(systemPrompt, userPrompt, true, `metadata plan gen ${genNum}`);
   const parsed = parseJsonFromModel(rawResponse);
 
   if (!Array.isArray(parsed) || parsed.length !== 10) {
@@ -356,18 +187,17 @@ DNA: ${normalizeDna(meta.dna).join(", ")}
 Write a complete, valid fragment shader.`;
 
   const label = `GLSL gen ${genNum} #${index + 1}`;
-  const models = [GEMINI_GLSL_MODEL, GEMINI_MODEL].filter((m, i, a) => a.indexOf(m) === i);
-  const maxAttempts = 6;
+  const maxAttempts = 4;
   let lastError = null;
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     try {
-      const raw = await runGeminiWithRetry(systemPrompt, userPrompt, {
+      const raw = await runInference(systemPrompt, userPrompt, {
+        task: "glsl",
         jsonMode: false,
-        models,
         retriesPerModel: 1,
         label: `${label} (pass ${attempt + 1})`,
-        maxOutputTokens: 12000
+        maxTokens: 12000
       });
 
       const validation = validateGlsl(decodeGlslField(raw.trim()));
@@ -405,6 +235,7 @@ async function runPool(taskFns, concurrency) {
 
 async function generateBatchInternal(db, userFocus) {
   const genNum = db.generationCount + 1;
+  setSessionAffinity(`shadermind-gen-${genNum}`);
   autopilot.generationProgress = "planning concepts";
   autopilot.generationStartedAt = Date.now();
 
@@ -546,7 +377,12 @@ Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. Then output your updated generation strategy guidelines.`;
 
   try {
-    const rawResponse = await runGeminiBatch(evolutionSystemPrompt, evolutionUserPrompt, true, `strategy evolution gen ${generation}`);
+    const rawResponse = await runInference(evolutionSystemPrompt, evolutionUserPrompt, {
+      task: "evolution",
+      jsonMode: true,
+      retriesPerModel: 3,
+      label: `strategy evolution gen ${generation}`
+    });
     const parsedEvo = parseJsonFromModel(rawResponse);
 
     db.currentStrategy = parsedEvo.evolvedStrategy || db.currentStrategy;
@@ -614,7 +450,12 @@ ${JSON.stringify(sketchSummaries, null, 2)}
 
 Rate every sketch id. Include all 10 ids in ratings.`;
 
-  const rawResponse = await runGeminiBatch(systemPrompt, userPrompt, true, "autonomous curation");
+  const rawResponse = await runInference(systemPrompt, userPrompt, {
+    task: "curation",
+    jsonMode: true,
+    retriesPerModel: 3,
+    label: "autonomous curation"
+  });
   const parsed = parseJsonFromModel(rawResponse);
 
   const ratings = {};
@@ -634,7 +475,7 @@ async function maybeConsolidateMemory(db) {
   if (current - last < CONSOLIDATION_EVERY_N) return null;
 
   try {
-    const rollup = await consolidateMemory(db, runGeminiBatch, {
+    const rollup = await consolidateMemory(db, runInference, {
       fromGen: last + 1,
       toGen: current
     });
@@ -785,6 +626,7 @@ app.get("/api/state", async (req, res) => {
       statistics: db.statistics,
       sketchesCount: db.sketches.length,
       learningMode: LEARNING_MODE,
+      aiProvider: getAIConfig(),
       lastConsolidationGen: db.lastConsolidationGen || 0,
       memoryRollup: rollup ? {
         fromGeneration: rollup.fromGeneration,
@@ -842,7 +684,7 @@ app.post("/api/memory/consolidate", async (req, res) => {
     if (toGen < fromGen) {
       return res.status(400).json({ error: "Nothing to consolidate." });
     }
-    const rollup = await consolidateMemory(db, runGeminiBatch, { fromGen, toGen });
+    const rollup = await consolidateMemory(db, runInference, { fromGen, toGen });
     await saveDB(db);
     res.json({ success: true, rollup });
   } catch (err) {
@@ -990,7 +832,12 @@ Respond with raw text only — no JSON, no markdown fences.`;
 Compose your artistic monologue.`;
 
   try {
-    const monologue = await runAIGeneration(narrativeSystemPrompt, narrativeUserPrompt, false, { geminiOnly: true });
+    const monologue = await runInference(narrativeSystemPrompt, narrativeUserPrompt, {
+      task: "narrative",
+      jsonMode: false,
+      retriesPerModel: 3,
+      label: "artistic monologue"
+    });
     res.json({ monologue });
   } catch (err) {
     console.error("Monologue compilation failed:", err);
@@ -1004,12 +851,21 @@ app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Deploy: DigitalOcean App Platform (app ${process.env.DO_APP_ID})`);
   }
 
-  if (!process.env.GEMINI_API_KEY) {
-    console.warn("WARNING: GEMINI_API_KEY is required. Batch generation uses Gemini only.");
+  if (!process.env.DIGITAL_OCEAN_MODEL_ACCESS_KEY) {
+    console.warn("WARNING: DIGITAL_OCEAN_MODEL_ACCESS_KEY is required for inference.");
     return;
   }
 
-  console.log(`AI config: Gemini-only=${GEMINI_ONLY}, batch=${GEMINI_MODEL}, glsl=${GEMINI_GLSL_MODEL}, DO fallback=${ALLOW_DO_FALLBACK}`);
+  const ai = getAIConfig();
+  console.log(`AI provider: DigitalOcean Inference (primary)`);
+  if (ai.router) {
+    console.log(`AI router: router:${ai.router}`);
+  } else {
+    console.log(`AI task pools: planning=${ai.taskModels.planning.join("→")}, glsl=${ai.taskModels.glsl.join("→")}`);
+  }
+  if (ai.geminiFallback) {
+    console.log(`AI fallback: Gemini (${process.env.GEMINI_MODEL || "gemini-2.5-flash"})`);
+  }
   console.log(`Learning: mode=${LEARNING_MODE}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
   if (AUTOPILOT_ENABLED) {
