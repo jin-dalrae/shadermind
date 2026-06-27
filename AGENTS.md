@@ -29,7 +29,7 @@ Guide for AI agents and contributors working on this repository.
 - 1–5 human curation (all 10 shaders required before submit)
 - Compile evidence + per-sketch critique after feedback
 - SQLite + JSON mirror (`storage/`, `USE_SQLITE=true` in `.env.example`)
-- Chrome shared grid renderer attempt (`public/shared-grid-renderer.js`, `?v=5`) — **grid still black on Chrome; open bug**
+- Chrome shared grid renderer attempt (`public/shared-grid-renderer.js`, `?v=5`) — **works in Cursor browser, black on Chrome**
 - Archive batch fallback when autopilot idle (`public/app.js`)
 - Agent docs: this file + `agents-learning-model.md`
 
@@ -59,16 +59,13 @@ npm test               # learning unit tests
 
 ## Known open bug: grid rendering (STILL FAILING)
 
-**Status:** 🔴 **Open — not fixed on Chrome in production use** (as of 2026-06-27)
-
-The **10-shader studio grid** can show **black/empty cells** in **Google Chrome** even after the LEARNING-branch renderer rewrite. Generation, API, curation, and learning all work — only **live grid thumbnails** are unreliable on Chrome.
+**Browser split (verified):** Renders in **Cursor browser**, does **not** render in **Chrome**.
 
 ### Symptoms
 
-- Studio `#shaderGrid` cells are black or blank
-- No animated shader art in the 10-cell grid during `awaiting_human` or saved-batch view
-- May work in **Cursor's embedded browser** or other engines while failing in Chrome
-- Fullscreen **dialog** view (`shader-renderer.js`) may still work for individual cells — verify separately
+- **Works in Cursor's embedded browser** — grid renders correctly there (verified during dev)
+- **Fails in Google Chrome** — same URL, same code: black/empty grid cells (verified, including incognito + `/?v=5`)
+- Fullscreen **dialog** view (`shader-renderer.js`) — not fully verified; test separately
 
 ### Root causes identified (original `main` grid)
 

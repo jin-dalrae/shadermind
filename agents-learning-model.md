@@ -21,7 +21,7 @@ This document explains **what the LEARNING branch adds**, **how learning works e
 1. Replaced Good/Bad with **1–5 ratings** (all 10 required)
 2. Added **code-aware learning** in `lib/learning/`
 3. Added **SQLite + JSON mirror** in `storage/`
-4. Fixed **Chrome WebGL context exhaustion** via shared grid renderer — **grid still black on Chrome; bug open**
+4. Fixed **Chrome WebGL context exhaustion** via shared grid renderer — **renders in Cursor browser, still black on Chrome**
 5. Documented everything in this file + [AGENTS.md](./AGENTS.md)
 
 **Immediate next steps** (if no other direction from user):
@@ -35,7 +35,8 @@ This document explains **what the LEARNING branch adds**, **how learning works e
 
 ## Known open bug: grid rendering (STILL FAILING)
 
-🔴 **Chrome studio grid shows black/empty cells** — not fixed as of 2026-06-27.
+🔴 **Chrome studio grid shows black/empty cells** — not fixed as of 2026-06-27.  
+✅ **Same app renders correctly in Cursor's embedded browser** — confirmed during dev.
 
 Full write-up: [AGENTS.md § Known open bug: grid rendering](./AGENTS.md#known-open-bug-grid-rendering-still-failing)
 
@@ -43,8 +44,9 @@ Full write-up: [AGENTS.md § Known open bug: grid rendering](./AGENTS.md#known-o
 
 | | |
 |---|---|
-| **Broken** | Live 10-cell grid + likely timeline thumbnails in Chrome |
-| **May work** | Cursor embedded browser; possibly dialog fullscreen (`shader-renderer.js`) |
+| **Works** | **Cursor embedded browser** — live grid renders (verified) |
+| **Broken** | **Google Chrome** — black/empty grid cells (verified, incognito + `/?v=5` too) |
+| **Unverified** | Dialog fullscreen (`shader-renderer.js`); Safari/Firefox |
 | **Unaffected** | Generation, 1–5 curation, learning loop, DB persistence |
 | **Attempted fix** | `public/shared-grid-renderer.js` — single WebGL context, `readPixels` blit, `?v=5` cache bust |
 | **User verified** | Still black after incognito + `/?v=5` |
@@ -425,7 +427,7 @@ for s in json.load(sys.stdin):
 CODE_AWARE_LEARNING=false
 ```
 
-**Chrome render (OPEN BUG):** Grid thumbnails fail on Chrome despite `shared-grid-renderer.js`. Full details: [AGENTS.md § Known open bug](./AGENTS.md#known-open-bug-grid-rendering-still-failing). Do not assume `/?v=5` fixes it.
+**Chrome render (OPEN BUG):** Grid works in **Cursor browser** but fails in **Chrome** (black cells). Full details: [AGENTS.md § Known open bug](./AGENTS.md#known-open-bug-grid-rendering-still-failing). Test in Chrome, not Cursor, when verifying fixes.
 
 ---
 

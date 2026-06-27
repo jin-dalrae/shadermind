@@ -16,7 +16,7 @@ Autonomous **WebGL GLSL** shader artist with **continual learning** — Gemini g
 
 **Active branch:** `LEARNING` (`git checkout LEARNING && git pull`)
 
-**Top open bug:** Chrome grid shows black shader cells — see [AGENTS.md § grid rendering](./AGENTS.md#known-open-bug-grid-rendering-still-failing).
+**Top open bug:** Chrome grid = black cells; **Cursor browser renders fine**. See [AGENTS.md § grid rendering](./AGENTS.md#known-open-bug-grid-rendering-still-failing).
 
 ---
 
