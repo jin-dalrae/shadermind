@@ -194,33 +194,27 @@ class ShaderMindUI {
         const actions = document.createElement("div");
         actions.className = "rate-actions";
 
-        const btnGood = document.createElement("button");
-        btnGood.type = "button";
-        btnGood.className = "btn-rate rate-good";
-        btnGood.textContent = "Good";
-        btnGood.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.rateSketch(sketch.id, "good");
+        [1, 2, 3, 4, 5].forEach(score => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `btn-rate rate-${score}`;
+          button.textContent = score;
+          button.title = this.ratingLabel(score);
+          button.setAttribute("aria-label", `${score} out of 5 — ${this.ratingLabel(score)}`);
+          button.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.rateSketch(sketch.id, score);
+          });
+          actions.appendChild(button);
         });
-
-        const btnBad = document.createElement("button");
-        btnBad.type = "button";
-        btnBad.className = "btn-rate rate-bad";
-        btnBad.textContent = "Bad";
-        btnBad.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.rateSketch(sketch.id, "bad");
-        });
-
-        actions.appendChild(btnGood);
-        actions.appendChild(btnBad);
         caption.appendChild(actions);
       } else if (sketch.rating) {
+        const score = this.ratingValue(sketch.rating);
         const badge = document.createElement("span");
-        badge.className = `rating-badge ${sketch.rating}`;
-        badge.textContent = sketch.rating;
+        badge.className = `rating-badge rating-${score}`;
+        badge.textContent = `${score} / 5`;
         wrap.appendChild(badge);
-        cell.classList.add(sketch.rating === "good" ? "is-good" : "is-bad");
+        cell.classList.add(`rating-${score}`);
       }
 
       cell.appendChild(wrap);
@@ -258,24 +252,25 @@ class ShaderMindUI {
     const cell = this.els.shaderGrid.querySelector(`[data-id="${sketchId}"]`);
     if (!cell) return;
 
-    cell.classList.remove("is-good", "is-bad");
-    cell.classList.add(rating === "good" ? "is-good" : "is-bad");
+    cell.classList.remove("rating-1", "rating-2", "rating-3", "rating-4", "rating-5");
+    cell.classList.add(`rating-${rating}`);
 
     cell.querySelectorAll(".btn-rate").forEach(btn => {
       btn.classList.remove("is-selected");
     });
     const selected = cell.querySelector(`.btn-rate.rate-${rating}`);
-    if (selected) selected.classList.add("is-selected", rating);
+    if (selected) selected.classList.add("is-selected");
 
     this.updateSubmitState();
   }
 
   updateSubmitState() {
     const count = Object.keys(this.userRatings).length;
-    this.els.btnSubmitFeedback.disabled = count === 0;
-    this.els.curationHint.textContent = count === 0
-      ? "Rate at least one shader"
-      : `${count} rated — unrated will count as Bad`;
+    const total = this.activeBatch?.length || 0;
+    this.els.btnSubmitFeedback.disabled = count !== total;
+    this.els.curationHint.textContent = total
+      ? `${count} / ${total} rated · 1 low, 5 high`
+      : "Rate every shader from 1 to 5";
   }
 
   async submitFeedback() {
@@ -284,10 +279,6 @@ class ShaderMindUI {
     const gen = this.activeBatch[0].generation;
     const ratings = { ...this.userRatings };
     const explicitRatingIds = Object.keys(this.userRatings);
-
-    this.activeBatch.forEach(s => {
-      if (!ratings[s.id]) ratings[s.id] = "bad";
-    });
 
     this.els.btnSubmitFeedback.disabled = true;
     this.els.btnSubmitFeedback.textContent = "Evolving…";
@@ -364,7 +355,7 @@ class ShaderMindUI {
       li.className = "timeline-item";
 
       const good = this.sketches.filter(
-        s => s.generation === entry.generation && s.rating === "good"
+        s => s.generation === entry.generation && this.ratingValue(s.rating) >= 4
       );
 
       li.innerHTML = `
@@ -447,6 +438,23 @@ class ShaderMindUI {
   clearRenderers() {
     this.renderers.forEach(r => r.stop());
     this.renderers.clear();
+  }
+
+  ratingValue(rating) {
+    if (rating === "good") return 5;
+    if (rating === "bad") return 1;
+    const score = Number(rating);
+    return Number.isInteger(score) && score >= 1 && score <= 5 ? score : 3;
+  }
+
+  ratingLabel(score) {
+    return {
+      1: "Strong dislike",
+      2: "Dislike",
+      3: "Neutral",
+      4: "Like",
+      5: "Strong like"
+    }[score];
   }
 
   esc(str) {
