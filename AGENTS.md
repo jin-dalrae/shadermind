@@ -132,7 +132,8 @@ Do **not** mark this bug resolved in docs until verified on Chrome by a human cu
 - **Theme:** Continual Learning (PLUS-inspired preference summaries)
 - **Stack:** Node.js + Express backend, vanilla HTML/CSS/JS frontend, WebGL 1.0 renderer
 - **Persistence:** `storage/` — SQLite (`shadermind.db`) with `database.json` mirror, or JSON-only fallback
-- **North star:** 3,650 sketches ([Lieberman daily-sketch essay](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) — metaphor, not a calendar)
+- **Spirit:** everyday sketches, change a bit from the previous one, learn toward what you love ([Lieberman essay](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d))
+- **North star:** 3,650 sketches — metaphor for that arc, not a calendar
 
 ---
 

@@ -1,10 +1,12 @@
 # ShaderMind
 
-**An autonomous GLSL artist that learns taste in public.**
+**Everyday shader sketches — each one a small step toward what you love.**
 
-Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It generates WebGL fragment shaders, learns from your **1–5 ratings**, and rewrites an explicit **strategy genome** — a readable preference model inspired by [PLUS](https://arxiv.org/abs/2507.13579) (Preference Learning Using Summarization).
+ShaderMind is a continual-learning studio for GLSL: generate a batch, rate what you feel, and the agent remixes the last good work with **one change at a time** — not full reinventions. Over generations it learns what you wanted to see and steers the next sketches there.
 
-> *"Don't make something new — change one thing each day."* — [Zach Lieberman](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d), *10 Years of Daily Sketches* (metaphorical north star: **3,650 sketches**)
+Inspired by [Zach Lieberman's daily code sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d): *learn from everyday practice, change a bit from the previous one, until you reach the work you love.* The **3,650** sketch count is a north-star metaphor for that arc — not a calendar.
+
+Preference memory and the strategy genome follow [PLUS](https://arxiv.org/abs/2507.13579): taste as **readable text** that sharpens with every batch.
 
 **Hackathon:** 2026 AI Engineer World's Fair · Continual Learning track
 
@@ -39,7 +41,7 @@ Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It gen
 4. Scroll **Evolution** — generation milestones with thumbnails of high-rated work.
 5. Click **Explain artistic evolution** — the agent narrates its own arc.
 
-The artifact isn't one pretty shader. It's the **preference model getting sharper**.
+The artifact isn't one pretty shader. It's the **slow drift toward what you love** — sketch by sketch, change by change.
 
 ---
 
@@ -185,7 +187,7 @@ shadermind/
 ## References
 
 - Nam, H., Wan, Y., Liu, M., Ahnn, P., Lian, J., & Jaques, N. (2025/2026). *Learning to summarize user information for personalized reinforcement learning from human feedback.* [arXiv:2507.13579](https://arxiv.org/abs/2507.13579)
-- Lieberman, Z. — [*I spent 10 years making a sketch in code every day*](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) (creative practice metaphor; 3,650 sketch north star)
+- Lieberman, Z. — [*I spent 10 years making a sketch in code every day*](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) — everyday sketches, small deltas from the last, learning toward what you love (3,650 north star)
 
 ---
 

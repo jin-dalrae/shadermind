@@ -1,7 +1,7 @@
 # Hackathon Pitch & Presentation Guide: ShaderMind
 
 > **Hook:**
-> *"Most AI art tools assume everyone wants the same thing. ShaderMind doesn't. It learns a readable model of aesthetic taste — and keeps rewriting it."*
+> *"Everyday sketches. Change a little from the last. Learn what you love — until the code shows you what you wanted to see."*
 
 ---
 
@@ -35,7 +35,7 @@
 
 * **What it is:** An autonomous GLSL artist that runs continuously — generates 10 shaders, curates them, extracts heuristics, rewrites its strategy, repeats.
 * **No input required** — autopilot drives the full loop. The gallery updates live.
-* **Lieberman metaphor:** 3,650 sketches as a creative north star ([Zach Lieberman's 10-year daily practice](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d)) — a **count metaphor**, not a calendar.
+* **Lieberman spirit:** learn from [everyday sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) — change a little from the previous one, batch by batch, toward what you love and wanted to see. **3,650** is the north-star count for that arc, not a calendar.
 * **Output you can read:** Every generation leaves a trace — heuristics with approval rates, reflection notes, timeline milestones.
 
 ---

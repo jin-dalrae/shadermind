@@ -23,7 +23,7 @@ export const DEFAULT_DB = {
       generation: 0,
       timestamp: new Date().toISOString(),
       strategy: "Initial baseline setup: geometric flow and subtle light dynamics.",
-      notes: "Starting point inspired by Zach Lieberman's daily sketches survey."
+      notes: "Starting point: everyday sketches, small changes from the last, learning toward what we love to see."
     }
   ],
   sketches: [],

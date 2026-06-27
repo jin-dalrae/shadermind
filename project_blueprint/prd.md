@@ -36,7 +36,7 @@ PLUS shows that compressing preference history into explicit, readable summaries
 
 **Framing:** Research prototype on machine creativity — an AI that develops aesthetic judgment, artistic heuristics, and self-reflective generation strategies.
 
-**Lieberman reference (metaphorical only):** The 3,650 sketch count is a *north-star metaphor* from Zach Lieberman's daily-sketch practice — not a calendar, streak tracker, or day counter.
+**Lieberman spirit:** Learn from everyday sketches — each generation changes a bit from the last approved work, steering toward what the curator loves and wanted to see ([essay](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d)). The 3,650 count is a *north-star metaphor* for that arc — not a calendar, streak tracker, or day counter.
 
 ---
 
