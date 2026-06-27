@@ -1,0 +1,23 @@
+name: shadermind
+services:
+  - name: web
+    github:
+      repo: your-org/shadermind
+      branch: main
+      deploy_on_push: true
+    source_dir: /
+    environment_slug: node-js
+    http_port: 8080
+    instance_count: 1
+    instance_size_slug: basic-xxs
+    envs:
+      - key: GEMINI_API_KEY
+        scope: RUN_TIME
+        type: SECRET
+      - key: AUTOPILOT
+        value: "true"
+      - key: AUTOPILOT_INTERVAL_MS
+        value: "45000"
+      - key: PORT
+        value: "8080"
+    run_command: node server.js

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ShaderMind | Autonomous Creative Engine</title>
+  <meta name="description" content="ShaderMind — an autonomous GLSL artist that develops aesthetic judgment through continual learning powered by Google Gemini.">
+  
+  <!-- Modern Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600&display=swap" rel="stylesheet">
+  
+  <link rel="stylesheet" href="index.css">
+</head>
+<body class="dark-theme">
+  
+  <!-- Cyberpunk Scanline Effect -->
+  <div class="scanlines"></div>
+
+  <!-- Main Container -->
+  <div class="app-layout">
+    
+    <!-- Premium Sidebar Header -->
+    <aside class="app-sidebar">
+      <div class="sidebar-header">
+        <div class="brand">
+          <span class="brand-glyph">✦</span>
+          <div class="brand-text">
+            <h1>SHADERMIND</h1>
+            <span class="subtitle">AUTONOMOUS ARTIST</span>
+          </div>
+        </div>
+        <p class="sidebar-philosophy">
+          "Make something new out of something old." — Inspired by Zach Lieberman's 10 Years of Daily Sketches.
+        </p>
+      </div>
+
+      <!-- Navigation Tabs -->
+      <nav class="sidebar-nav" aria-label="Main Navigation">
+        <button class="nav-tab active" data-tab="generate" id="tabBtnGenerate">
+          <span class="tab-icon">⚡</span> The Studio
+        </button>
+        <button class="nav-tab" data-tab="timeline" id="tabBtnTimeline">
+          <span class="tab-icon">⏳</span> Evolution Timeline
+        </button>
+        <button class="nav-tab" data-tab="mind" id="tabBtnMind">
+          <span class="tab-icon">🧠</span> The Mind
+        </button>
+      </nav>
+
+      <!-- Agent Liveness Dashboard -->
+      <div class="agent-liveness glass-panel">
+        <div class="liveness-title">
+          <span class="pulse-dot"></span>
+          <span>AGENT GENOME STATE</span>
+        </div>
+        <div class="liveness-stats">
+          <div class="stat-row">
+            <span class="stat-label">Daily Progress:</span>
+            <span class="stat-val" id="lblDailyCount">0 / 3,650</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Generations:</span>
+            <span class="stat-val" id="lblGenCount">0</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">User Favor Rate:</span>
+            <span class="stat-val text-accent" id="lblSuccessRate">0%</span>
+          </div>
+          <div class="stat-row">
+            <span class="stat-label">Keep Going Streak:</span>
+            <span class="stat-val text-accent" id="lblStreakDays">0 days</span>
+          </div>
+        </div>
+        <div class="progress-bar-wrap">
+          <div class="progress-bar-fill" id="pbJourney" style="width: 0%;"></div>
+        </div>
+        <span class="journey-caption">Hacking towards 10 years of everyday sketching.</span>
+      </div>
+
+      <footer class="sidebar-footer">
+        <span>Google Gemini 2.5 Flash</span>
+        <span class="version-badge">v1.0-AIEWF</span>
+      </footer>
+    </aside>
+
+    <!-- App Content Area -->
+    <main class="app-viewport">
+
+      <!-- Autonomous Mode Banner -->
+      <div class="autopilot-banner" id="autopilotBanner">
+        <span class="pulse-dot"></span>
+        <span id="autopilotStatusText">Autonomous mode initializing...</span>
+      </div>
+      
+      <!-- 1. GENERATE VIEW -->
+      <section id="viewGenerate" class="tab-content active">
+        <div class="generate-layout">
+          
+          <!-- Generator Control and Reflection Panel -->
+          <div class="control-panel flex-col gap-lg">
+            
+            <!-- Prompt Strategy Section -->
+            <div class="glass-card flex-col gap-md">
+              <div class="card-header">
+                <span class="tag">ACTIVE STRATEGY</span>
+                <h2>Evolved Instruction Genome</h2>
+              </div>
+              <p class="panel-desc">
+                The agent rewrites this strategy after every batch to satisfy your tastes based on mathematical mutations and "code from yesterday".
+              </p>
+              <div class="code-block" id="lblCurrentStrategy">
+                Loading active strategy...
+              </div>
+            </div>
+
+            <!-- Self-Reflection Log -->
+            <div class="glass-card flex-col gap-sm">
+              <div class="card-header">
+                <span class="tag">AGENT SELF-REFLECTION</span>
+                <h2>Internal Critic Log</h2>
+              </div>
+              <blockquote class="agent-reflection" id="lblCriticLog">
+                "Initiating system baseline... awaiting your first batch generation."
+              </blockquote>
+            </div>
+
+            <!-- Focus Feedback Input Form -->
+            <div class="glass-card flex-col gap-md">
+              <div class="card-header">
+                <h2>Direct Agent's Curatorial Eye</h2>
+              </div>
+              <p class="panel-desc">
+                Optional override — ShaderMind runs autonomously. Add aesthetic notes here to steer the next manual batch.
+              </p>
+              <form id="frmGenerate" class="flex-col gap-sm">
+                <textarea id="txtUserFocus" placeholder="Optional: 'Slower liquid motion, warm ambers, less grid noise...' (leave empty for autonomous curation)"></textarea>
+                <div class="btn-group flex-row justify-between">
+                  <button type="button" class="btn btn-secondary" id="btnRemixBaseline">
+                    Reset Baseline
+                  </button>
+                  <button type="submit" class="btn btn-secondary" id="btnSubmitGenerate">
+                    Manual Batch (Optional)
+                  </button>
+                </div>
+              </form>
+            </div>
+
+          </div>
+
+          <!-- Generation Work Area -->
+          <div class="workspace-panel flex-col gap-md">
+            
+            <div class="workspace-header flex-row justify-between align-center">
+              <div>
+                <h2>Workspace: Current Batch <span id="lblActiveGen">#0</span></h2>
+                <p class="muted">Autonomous curation runs continuously. Manual ratings are optional overrides.</p>
+              </div>
+              
+              <!-- Batch Submit Button -->
+              <button class="btn btn-secondary btn-sm" id="btnSubmitFeedback" disabled>
+                Manual Feedback (Optional)
+              </button>
+            </div>
+
+            <!-- Loaders / Shimmers -->
+            <div class="workspace-loader hidden" id="workspaceLoader">
+              <div class="glitch-spinner"></div>
+              <h3 id="loaderTitle">ShaderMind is creating...</h3>
+              <p class="muted" id="loaderDesc">Google Gemini is synthesizing GLSL, curating aesthetics, and evolving the strategy genome. This takes 15–30 seconds per cycle.</p>
+            </div>
+
+            <div class="workspace-empty" id="workspaceEmpty">
+              <div class="empty-icon">✺</div>
+              <h3>Autonomous studio warming up</h3>
+              <p class="muted">ShaderMind is generating its first batch — no input needed. Shaders will appear here automatically.</p>
+            </div>
+
+            <!-- Shader Canvas Grid (10 items) -->
+            <div class="shader-grid hidden" id="shaderGrid">
+              <!-- JS will dynamically populate 10 shader-card structures here -->
+            </div>
+
+          </div>
+
+        </div>
+      </section>
+
+      <!-- 2. EVOLUTION TIMELINE VIEW -->
+      <section id="viewTimeline" class="tab-content">
+        <div class="timeline-wrapper flex-col gap-lg">
+          <div class="timeline-header">
+            <h2>Artistic Journey Scroll</h2>
+            <p class="muted">A vertical chronicle of representative milestones, strategies, and successful sketches across generations.</p>
+          </div>
+
+          <!-- Vertical Timeline Container -->
+          <div class="vertical-timeline-container" id="timelineContainer">
+            <!-- Dynamically populated milestones with representative canvas previews -->
+          </div>
+        </div>
+      </section>
+
+      <!-- 3. THE MIND VIEW -->
+      <section id="viewMind" class="tab-content">
+        <div class="mind-wrapper flex-col gap-lg">
+          
+          <div class="mind-header">
+            <h2>The Agent's Mind</h2>
+            <p class="muted">Expose the inner curatorial engines and cognitive state of ShaderMind, reflecting on heuristics, terminal logs, and evolutionary journeys.</p>
+          </div>
+
+          <!-- Core stats overview bar -->
+          <div class="metrics-grid">
+            <div class="metric-card glass-card">
+              <span class="m-title">EVERYDAY SKETCHES</span>
+              <span class="m-value text-accent" id="lblMindSketches">0</span>
+              <p class="m-sub">sketches logged in history</p>
+            </div>
+            <div class="metric-card glass-card">
+              <span class="m-title">GENOMIC ITERATIONS</span>
+              <span class="m-value text-accent" id="lblMindGenerations">0</span>
+              <p class="m-sub">active strategy mutations</p>
+            </div>
+            <div class="metric-card glass-card">
+              <span class="m-title">AESTHETIC ACCURACY</span>
+              <span class="m-value text-accent" id="lblMindAccuracy">0%</span>
+              <p class="m-sub">ratio of curated GOOD votes</p>
+            </div>
+          </div>
+
+          <div class="mind-grid-layout">
+            
+            <!-- Heuristics Core Panel -->
+            <div class="glass-card flex-col gap-md">
+              <div class="card-header">
+                <span class="tag">HEURISTICS MATRIX</span>
+                <h2>Learned Math Rules</h2>
+              </div>
+              <p class="panel-desc">Explicit artistic rules the agent has synthesized from your curation habits, guiding future GLSL compilations.</p>
+              <div class="heuristics-list" id="lblHeuristicsList">
+                <!-- Dynamic Heuristics Badges or Rows -->
+              </div>
+            </div>
+
+            <!-- Self-Reflection Log Console -->
+            <div class="glass-card flex-col gap-md">
+              <div class="card-header">
+                <span class="tag">LOGGING PORT</span>
+                <h2>Self-Reflection Logs</h2>
+              </div>
+              <p class="panel-desc">Monochrome scroll containing internal critiques, strategy logs, and optimization traces during updates.</p>
+              <div class="terminal-console" id="terminalReflectionConsole">
+                <div class="terminal-line system-line">[SYS] Initializing Cognitive Logger...</div>
+                <div class="terminal-line text-accent">[OK] Ready for neural feedback cycles.</div>
+                <!-- Chronological timeline notes -->
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Poetic Monologue Stream Panel -->
+          <div class="glass-card flex-col gap-md monologue-panel">
+            <div class="flex-row justify-between align-center monologue-panel-header">
+              <div class="card-header" style="margin-bottom: 0;">
+                <span class="tag">SYNTHESIZED MEMORY</span>
+                <h2>Explain Your Artistic Evolution</h2>
+                <p class="panel-desc">Click to initiate an AI deep-dive analysis. ShaderMind will synthesize its lifetime metrics and stream a poetic monologue describing its technical and aesthetic growth.</p>
+              </div>
+              <button class="btn btn-primary" id="btnExplainEvolution">
+                🧠 Explain Evolution
+              </button>
+            </div>
+
+            <!-- Typing Stream Console -->
+            <div class="narrative-output-box" id="narrativeOutputBox">
+              <div class="narrative-placeholder" id="narrativePlaceholder">
+                Awaiting connection to curatorial memory matrix... Click "Explain Evolution" to begin.
+              </div>
+              <div class="narrative-text-container hidden" id="narrativeTextContainer">
+                <p id="narrativeText"></p><span class="terminal-cursor">|</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- FULLSCREEN WEBGL MODAL FOR VIEWING & INTERACTING -->
+  <div class="fullscreen-modal" id="fullscreenModal">
+    <button class="modal-close-btn" id="modalClose">&times;</button>
+    
+    <div class="modal-content">
+      
+      <!-- Shader canvas (Left side, fills most) -->
+      <div class="modal-canvas-container">
+        <canvas id="modalCanvas"></canvas>
+        <div class="interaction-hint">Hover / Move mouse inside to interact dynamically with u_mouse</div>
+        <div class="shader-error-overlay" id="modalShaderError"></div>
+      </div>
+
+      <!-- Shader details and code panel (Right side) -->
+      <div class="modal-side-panel flex-col gap-lg">
+        
+        <div class="flex-col gap-xs">
+          <span class="tag" id="modalGenTag">GENERATION #0</span>
+          <h1 id="modalTitle">Poetic Sketch Title</h1>
+          <div class="flex-row gap-xs" id="modalDnaTags">
+            <!-- tags dynamically populated -->
+          </div>
+        </div>
+
+        <div class="flex-col gap-xs">
+          <h3>Agent's Artistic Statement</h3>
+          <p class="modal-statement" id="modalStatement">
+            "An exploration of light bending..."
+          </p>
+        </div>
+
+        <!-- Tabbed block inside details: Code Preview -->
+        <div class="flex-col gap-xs modal-code-section">
+          <div class="flex-row justify-between align-center">
+            <h3>GLSL Fragment Code</h3>
+            <button class="btn btn-secondary btn-sm" id="btnCopyShader">Copy Shader</button>
+          </div>
+          <pre class="shader-code-view"><code id="modalCodeView">precision mediump float;
+// GLSL code here</code></pre>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div class="toast" id="appToast">Copied</div>
+
+  <script type="module" src="app.js"></script>
+</body>
+</html>

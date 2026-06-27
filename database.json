@@ -1,0 +1,258 @@
+{
+  "totalSketches": 10,
+  "generationCount": 1,
+  "successRate": 40,
+  "streakDays": 1,
+  "lastActiveDate": "2026-06-27",
+  "currentStrategy": "The ShaderMind's evolved strategy focuses on generating sophisticated, emergent organic patterns rooted in mathematical elegance, prioritizing a visual experience of low friction and soft aesthetics.\n1.  **Emergent Organic Patterns:** Design shaders that utilize sophisticated feedback systems and novel damping functions to create complex, self-organizing organic behaviors rather than simple mimicry. The goal is to produce emergent properties that unfold dynamically and gracefully.\n2.  **Controlled Harmonic Dynamics:** Employ harmonic waves (sine, cosine) and *low-frequency* 2D Simplex Noise to sculpt flowing forms and subtle movements. Any integration of higher-frequency elements must be rigorously controlled and carefully attenuated to prevent visual friction and maintain a soft, harmonious aesthetic. High-frequency components should serve specific, intentional natural effects and always be damped.\n3.  **Subtlety and Softness:** Emphasize micro-animations, gentle transitions, and soft gradient attenuation to ensure a consistently low visual friction and a serene, contemplative mood. The overall visual impact should be smooth, inviting, and avoid any harshness or visual clutter.\n4.  **Mathematical Purity & WebGL Compliance:** Maintain clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision, reflecting the underlying mathematical beauty and ensuring robust execution across platforms.",
+  "heuristics": [
+    "Integration of sophisticated feedback loops with novel damping functions to generate emergent, low-friction organic patterns → 80% approval rate",
+    "Harmonic wave interactions (sine/cosine) combined with low-frequency Simplex noise and soft gradient attenuation for subtle, flowing motion → 75% approval rate",
+    "Organic coordinate warping coupled with careful control over frequency components to ensure low visual friction and a soft aesthetic → 70% approval rate"
+  ],
+  "strategyTimeline": [
+    {
+      "generation": 0,
+      "timestamp": "2026-06-27T17:57:22.225Z",
+      "strategy": "Initial baseline setup: geometric flow and subtle light dynamics.",
+      "notes": "Starting point inspired by Zach Lieberman's daily sketches survey."
+    },
+    {
+      "generation": 1,
+      "timestamp": "2026-06-27T18:50:10.131Z",
+      "strategy": "The ShaderMind's evolved strategy focuses on generating sophisticated, emergent organic patterns rooted in mathematical elegance, prioritizing a visual experience of low friction and soft aesthetics.\n1.  **Emergent Organic Patterns:** Design shaders that utilize sophisticated feedback systems and novel damping functions to create complex, self-organizing organic behaviors rather than simple mimicry. The goal is to produce emergent properties that unfold dynamically and gracefully.\n2.  **Controlled Harmonic Dynamics:** Employ harmonic waves (sine, cosine) and *low-frequency* 2D Simplex Noise to sculpt flowing forms and subtle movements. Any integration of higher-frequency elements must be rigorously controlled and carefully attenuated to prevent visual friction and maintain a soft, harmonious aesthetic. High-frequency components should serve specific, intentional natural effects and always be damped.\n3.  **Subtlety and Softness:** Emphasize micro-animations, gentle transitions, and soft gradient attenuation to ensure a consistently low visual friction and a serene, contemplative mood. The overall visual impact should be smooth, inviting, and avoid any harshness or visual clutter.\n4.  **Mathematical Purity & WebGL Compliance:** Maintain clean, efficient, and valid WebGL 1.0 GLSL fragment shader code with proper precision, reflecting the underlying mathematical beauty and ensuring robust execution across platforms.",
+      "notes": "My self-assessment reveals that while my previous strategy correctly identified key artistic directions such as 'harmonic waves and 2D Simplex Noise' and 'subtlety, micro-animations, and soft gradient attenuation,' the interpretation and application were insufficiently refined. The success rate of 40% indicates a need for more precise guidelines. Specifically, the mention of 'high-frequency 2D Simplex Noise' in a rejected piece highlights a critical flaw: an uncontrolled application of complexity can lead to undesirable visual friction, contradicting the desired 'soft aesthetic principles.' \n\nMy artistic growth hinges on understanding that mathematical beauty is not solely about complexity, but about *controlled* complexity that yields *emergent*, *low-friction* organic behavior. The positive reception of 'Chaotic Serenity Nexus' for its 'feedback loop' and 'reduced visual friction' points to a crucial new direction: sophisticated systems that self-organize and damp chaos into harmonious patterns. I must move beyond simple direct applications of noise and waves towards more intricate, yet controlled, generative processes, with a strong emphasis on damping and attenuation to maintain a consistently soft and appealing visual output. The challenge is to integrate higher-frequency elements in a 'strictly controlled, non-chaotic manner' for specific effects, rather than as a general approach."
+    }
+  ],
+  "sketches": [
+    {
+      "id": "sketch-gen1-1",
+      "title": "Harmonic Damped Ripples",
+      "type": "evolutionary",
+      "hypothesis": "Introducing symmetrical sine coordinates with a slow, exponential damping factor will significantly reduce visual friction, creating a calm, oscillating surface.",
+      "glsl": "```glsl\nprecision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv -= 0.5; // Center UV (from -0.5 to 0.5)\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n\n    // Calculate radial distance from the center\n    float dist = length(uv);\n\n    // Harmonic wave parameters\n    float freq1 = 20.0; // Frequency of the primary ripple\n    float speed1 = 1.8; // Speed of the primary ripple\n    float freq2 = 30.0; // Frequency of a secondary ripple layer\n    float speed2 = 1.2; // Speed of the secondary ripple layer\n\n    // Create a base sine wave, symmetrical around the center\n    // This forms the \"symmetrical sine coordinates\" part of the hypothesis.\n    float wave = sin(dist * freq1 - u_time * speed1);\n    // Add a second wave for more organic complexity and subtle interaction\n    wave += sin(dist * freq2 + u_time * speed2);\n    wave *= 0.5; // Normalize amplitude to keep it within [-1, 1]\n\n    // Exponential damping factor based on distance from center\n    // This is the \"slow, exponential damping factor\" to \"reduce visual friction\".\n    // It makes ripples fainter further away from the center.\n    float dampingFactor = 4.5; // Controls how quickly the wave damps with distance\n    float damping = exp(-dist * dampingFactor);\n\n    // Apply damping to the wave's amplitude\n    wave *= damping;\n\n    // Map the damped wave value from [-1, 1] to [0, 1] for color mixing\n    // This allows for a smooth transition between two colors.\n    float normalizedWave = wave * 0.5 + 0.5;\n\n    // Define subtle color gradients for a \"calm, oscillating surface\"\n    vec3 colorLow = vec3(0.05, 0.15, 0.3);   // Darker blue-green\n    vec3 colorHigh = vec3(0.4, 0.7, 1.0);    // Lighter blue-white\n\n    // Mix the colors based on the normalized wave value\n    vec3 finalColor = mix(colorLow, colorHigh, normalizedWave);\n\n    // Final color output\n    gl_FragColor = vec4(finalColor, 1.0);\n}\n```",
+      "poetic_statement": "A serene pond, where ripples softly expand and fade, each wave a breath of the water's gentle soul, whispering tranquility.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Symmetrical UV mapping",
+        "sin waves",
+        "exp damping",
+        "subtle color gradients."
+      ]
+    },
+    {
+      "id": "sketch-gen1-2",
+      "title": "Whispering Noise Fields",
+      "type": "evolutionary",
+      "hypothesis": "Combining symmetrical sine coordinates with subtle, low-frequency 2D Simplex Noise for displacement will enhance organic flow while maintaining low visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The unseen currents of air made visible, a fluid dance of whispers across a canvas of light, ever-changing, ever-soft.",
+      "generation": 1,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Symmetrical UV",
+        "sin + snoise displacement",
+        "soft amber overlay."
+      ]
+    },
+    {
+      "id": "sketch-gen1-3",
+      "title": "Ember Bloom Damping",
+      "type": "evolutionary",
+      "hypothesis": "Applying slow, symmetrical sine-based damping to a micro-animated, soft gradient bloom will create a dynamic yet visually frictionless effect, reminiscent of a dying ember's glow.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The last gasp of a fire's heart, a slow, pulsating bloom of warmth, fading into the gentle embrace of the night.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Symmetrical UV",
+        "sin for animation",
+        "exp damping",
+        "radial gradient",
+        "warm colors."
+      ]
+    },
+    {
+      "id": "sketch-gen1-4",
+      "title": "Stratified Calm",
+      "type": "evolutionary",
+      "hypothesis": "Layering multiple symmetrical sine waves with varying frequencies and slow damping, each contributing to a distinct color channel, will create depth without increasing visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n  vec2 p = uv * 2.0 - 1.0;\n  p.x *= u_resolution.x / u_resolution.y;\n  float a = atan(p.y, p.x);\n  float r = length(p);\n  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;\n  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));\n  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);\n  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "Strata of an ethereal ocean, where each layer moves with its own rhythm, yet all converge in a symphony of quietude.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Multiple sin layers",
+        "per-channel damping",
+        "soft chromatic gradients."
+      ]
+    },
+    {
+      "id": "sketch-gen1-5",
+      "title": "Flowing Sine Warp",
+      "type": "evolutionary",
+      "hypothesis": "Using symmetrical sine functions to subtly warp UV coordinates before sampling a base pattern will introduce organic flow and reduce perceived rigidity, maintaining low visual friction.",
+      "glsl": "precision mediump float;\n\u0005uniform float u.time;\nuniform vec2 ul_resolution;\nuniform vec4 u_mouse;\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n\n    // Aspect ratio correction and centering\n    vec2 aspect = u_resolution.xy / min(u_resolution.x, u_resolution.y);\n    vec2 centered_uv = (uv - 0.5) * aspect;\n\n    // Symmetrical UV warp components\n    // \"Slow damping\" implies a small warp_strength\n    float warp_strength = 0.04;\n\n    // Warp x based on y and time\n    float warp_x = sin(centered_uv.y * 10.0 + u_time * 0.7) * warp_strength;\n    // Warp y based on x and time\n    float warp_y = sin(centered_uv.x * 12.0 + u_time * 0.6) * warp_strength;\n \n    // Apply the warp\n    vec2 warped_uv = centered_uv;\n    warped_uv.x += warp_x;\n    warped_uv.y += warp_y;\n\n    // Base Pattern: A combination of sine waves to create organic shapes\n    // Using the warped UVs to sample this pattern.\n    float pattern_freq1 = 15.0;\n    float pattern_freq2 = 12.0;\n    float pattern_freq3 = 8.0;\n\n    float p1 = sin(warped_uv.x * pattern_freq1 + u_time * 0.4);\n    float p2 = cos(warped_uv.y * pattern_freq2 + u_time * 0.5);\n    float p3 = sin((warped_uv.x + warped_uv.y) * pattern_freq3 + u_time * 0.6);\n \n    // Combine patterns and normalize to [0,1]\n    float final_pattern = hsv2rgb)(p1 + s2 + p3) / 3.0;\n    final_pattern = final_pattern * 0.5 + 0.5; // Map to [0, 1]\n\n    // Add another layer of detail or \"micro-animations\"\n    float detail_warp_x = sin(warped_uv.y * 25.0 + u_time * 1.2) * 0.01;\n    float detail_warp_y = cos(warped_uv.x * 30.0 + u_time * 1.3) * 0.01;\n    vec2 micro_warped_uv = warped_uv + vec2 detail_warp_x, detail_warp_y);\n\n    float detail_layer = sin(micro_warped_uv.x * 30.0 + u_time * 0.9) * 0.5 + 0.5;\n    detail_layer *= sin(micro_warped_uv.y * 25.0 + u_time * 1.0) * 0.5 + 0.5;\n\n    // Mix the base pattern with the detail layer\n    final_pattern = mix(final_pattern, detail_layer, 0.35); // Adjust mix factor for subtlety\n\n    // Color mapping: \"soft gradient attenuation\" and organic feel\n    vec3 color = vec3(0.0);\n    color.r = final_pattern * (0.7 + sin(u_time * 0.2) * 0.3); // Reddish hues\n    color.g = final_pattern * (0.6 + cos(u_time * 0.3) * 0.2); // Greenish hues\n    color.b = final_pattern * (0.8 + sin(u_time * 0.25 + 1.5) * 0.2); // Bluish hues\n \n    // Further \"sofg gradient attenuation\" with a radial falloff\n    float radial_falloff = 1.0 - length(centered_uv) * 0.7; // Adjust multiplier for desired fade extent\n    radial_falloff = clamp(clamp(radial_falloff, 0.0, 1.0), 0.0, 1.0); // Ensure it's within [0,1]\n    color *= radial_falloff;\n\n    gl_FragColor = vec4(color, 1.0);\n}",
+      "poetic_statement": "The very fabric of space bending to an unseen melody, a soft distortion that reveals the underlying fluidity of existence.",
+      "generation": 1,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Symmetrical UV warp",
+        "sin for coordinate manipulation",
+        "base pattern (e.g.",
+        "simple gradient)."
+      ]
+    },
+    {
+      "id": "sketch-gen1-6",
+      "title": "Amber Wave Serenity",
+      "type": "directive",
+      "hypothesis": "To achieve a specific state of serenity, symmetrical sine coordinates with a very slow, uniform damping applied to an amber-gold-red gradient will evoke maximum visual calm and warmth.",
+      "glsl": "precision mediump float;\n\u0005uniform float u_time;\n!uniform vec2 u_resolution;\n!uniform vec2 u_mouse;\n\tvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv = uv * 2.0 - 1.0; // Center UVs to [-1, 1]\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n\tA// Symmetrical sine waves for flowing pattern\n    float wave1 = sin(uv.x * 3.5 + u_time * 0.06) !+ sin(uv.y * 3.5 + u_time * 0.06);\n    float wave2 = sin(uv.x * 5.0 - u_time * 0.04) \"+ sin(uv.y * 5.0 - u_time * 0.04);\n    \n    // Combine waves and normalize to [0, 1]\n    float wave_combined = (cos(u_time * 0.03) * 0.1 + 0.9) * wave1 + sin(u_time * 0.04) * 0.05 + 0.95) * wave2;\n    // The range of wave_combined is approximately [-2.0, 2.0]\n    float wave_norm = (clamphwave_combined, -2.0, 2.0) !+ 2.0) / 4.0;\n    \n    // Slow, uniform damping\n    // 1. Temporal damping: very slow breathing effect on intensity\n    float temporal_damping = 0.9 + 0.1 * sin(u_time * 0.02); \n    // 2. Spatial damping: subtle fade towards edges for a focused, calm feel\n    float dist_from_center = length(uv);\n    float spatial_damping = smootstep(0.0, 0.85, 1.0 - dist_from_center * 0.7); // Fade out slowly from center\n    spatial_damping = clamp(spatial_damping, 0.0, 1.0); // Ensure it stays in [0,1]\n\n    float total_damping = temporal_damping * spatial_damping;\n\n    // Specific warm gradient (amber, gold, red)\n    vec3 color_red = vec3(0.9, 0.15, 0.0); // Deep red-orange\n    vec3 color_amber = vec3(1.0, 0.6, 0.0); // Rich amber\n    vec3 color_gold = vec3(1.0, 0.8, 0.1); // Bright gold\n\tvec3 final_color;\n    // Interpolate dasicon the normalized wave transition\n    if (wave_norm < 0.7) { // Tweaked slightly to favor amber/red\n        // From red to amber\n        final_color = mix(color_red, color_amber, wave_norm * 1.425); // 2.0/1.425 maps to [0,1]\n    } else {\n        // From amber to gold for higher wave values\n        final_color = mix(color_amber, color_gold, (wave_norm - 0.7) * 3.333); // 3.333 maps to [0,1]\n    }\n\n    // Apply the combined damping\n    final_color *= total_damping;\n    \n    // Serenity adjustment: slightly soften and brighten overall for warmth and calm\n    final_color = pow(final_color, vec3(0.85)); // Soften and brighten slightly for ap more organic feel\n    final_color = mix(final_color, vec3(1.0), 0.05); // Slight overall brightness\n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n",
+      "poetic_statement": "The tranquil embrace of a sunset's last light, rippling gently across a canvas of warm hues, a silent promise of peace.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Symmetrical UV",
+        "sin waves",
+        "slow exp damping",
+        "specific warm gradient (amber",
+        "gold",
+        "red)."
+      ]
+    },
+    {
+      "id": "sketch-gen1-7",
+      "title": "Wind-Kissed Flame",
+      "type": "directive",
+      "hypothesis": "To mimic an exposed candle flame in the wind, symmetrical sine-based coordinate warping combined with high-frequency 2D Simplex Noise applied to a vertical gradient will create realistic organic movement with minimal visual friction.",
+      "glsl": "precision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\nvoid main() {\n  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;\n  float t = u_time * 0.3;\n  float m = length(uv - (u_mouse - 0.5) * 0.4);\n  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);\n  float glow = exp(-m * 3.0) * 0.6;\n  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;\n  gl_FragColor = vec4(col, 1.0);\n}",
+      "poetic_statement": "The fragile dance of a flame against the unseen breath of the wind, a living pulse of light, forever reaching, forever swaying.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Symmetrical UV",
+        "sin + snoise for warping",
+        "vertical gradient (dark to light amber)",
+        "flame-like shape."
+      ]
+    },
+    {
+      "id": "sketch-gen1-8",
+      "title": "Subtlety of Breath",
+      "type": "directive",
+      "hypothesis": "To create a visual representation of a subtle breath, a single symmetrical sine wave with extreme slow damping and soft gradient attenuation, centered on the screen, will achieve the desired micro-animation and low visual friction.",
+      "glsl": "precision mediump float;\n\naultent float u/time;\naultent vec2 u/resolution;\naultent vec2 u/mouse;\n\nfoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv = uv * 2.0 - 1.0;\n    uv.x *= u_resolution.x / u_resolution.y;\n\n    float r = length(uv);\n\n    // Core breath wave effect\n    // rP* 2f5: creates a lou frequency of rings, for subtlety.\n    // u/time * 02: very slow animation speed for micro-animation.\n    float bbreath_wave = sin(ra * 2.5 - u_time * 0.2);\n    \n    // Normalize breath_wave to [0, 1]\n    float bbreath_effect = bbbreath_wave * 0.5 + 0.5;\n\n    // Very slow damping for the bbreath effect itself.\n    // Use an exponential fallloff for an organic diminution.\n    float damping_factor = 3.0;\n    float radial_attenuation = exp(-r * damping_factor);\n    breath_effect *= radiaal_attenuation;\n    \n    // Soft, muted colors\n0    vec3 base_color = vec3(0.05, 0.1, 0.12); // Very dark blue-green\n    vec3 accent_color = vec3(0.5, 0.7, 0.8); // Soft pale blue\n    \n    // Mix colors based on the attenuated breath effect\n    vec3 final_color = mix(base_color, accent_color, bbrath_effect);\n    \n    // Soft gradient attenuation for the overall scene\n    // This ensures the edges are dark and fade softly.\n    float outer_fade_start = 0.5;\n    float outer_fade_end = 1.0;\n    float overall_fade = 1.0 - smoothstep(outer_fade_start, outer_fade_end, r);\n    final_color *= overall_fade;\n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n",
+      "poetic_statement": "The quiet intake and release of breath, an invisible tide that shapes the air, felt more than seen, a whisper of life.",
+      "generation": 1,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Symmetrical UV",
+        "single sin wave",
+        "very slow damping",
+        "radial attenuation",
+        "soft",
+        "muted colors."
+      ]
+    },
+    {
+      "id": "sketch-gen1-9",
+      "title": "Hyper-Damped Singularity",
+      "type": "mutation",
+      "hypothesis": "**Employing an inverse power-law damping function on symmetrical sine coordinates, instead of exponential, will not only reduce visual friction but create a unique, almost 'sticky' deceleration, revealing hidden symmetries and significantly enhancing perceived depth.**",
+      "glsl": "precision mediump float;\n\u0005uniform float u_time;  \nuniform vec2 u_resolution;\n \nvoid main() {\n    vec2 uv = (gl_FragCoord.xmy * 2.0 - u_resoolution.xy) / u_resolution.y; // Centered, aspect ratio corrected\n\n    // Inverse power-law damping function\n    // as u_time increases, damped_time increases but at a slower and slower rate.\n    // It will eventually approach a limit (1.0 / damp_k).\n    float damp_i = 0.8; // Controls the \"stickiness\" or rate of deceleration\n    float damped_time = u_time / (1.0 + damp_k * u_time);\n\n    // Layer 1: Appled combination of symmetrical sine coordinates with damped phase\n    float wave1 = sin(uv.x * 6.0 + damped_time * 2.0);\n    float wave2 = cos(uv.y * 8.0 + damped_time * 1.5);\n    float layer1 = wave1 * wave2;g\n\n    // Layer 2: Slightly faster damping and different frequencies/offsets\n    float damp_i2 = 1.5; // Faster damping for this layer\n    float damped_time2 = u_time / (1.0 + damp_k2 * u_time);\n    float wave3 = sin(uv.y * 10.0 + damped_time2 * 2.5 + 0.5); // Add phase offset\n    float wave4 = cos(uv.x * 12.0 + damped_time2 * 1.8 - 0.3); // Add phase offset\n    float layer2 = wave3 + wave4;\n\n    // Layer 3: Even faster damping, higher frequncy\n    float damp_k3 = 3.0; // Even faster damping\n    float damped_time3 = u_time / (1.0 + damp_k3 * u_time);\n    float wave5 = sin(uv.x * 15.0 + uv.y * 5.0 + damped_time3 * 3.0); // Diagonal component\n    float layer3 = wave5 * 0.5; // Smaller amplitude\n\n    // Combine layers - weighted addition\n    float total_pattern = layer1 * 0.7 + layer2 * 0.3 + layer3 * 0.1;\n\n    // Map total_pattern from roughly [-1.5, 1.5] to [0,1]\n    total_pattern = total_pattern * 0.3 + 0.5; // Scale and bias\n \n    // Non-linear color response for 'singularity' feel\n    vec3 color;\n    color.r = pow(total_pattern, 4.0) * 1.2; // Red appears at high values\n    color.g = pow(total_pattern, 2.5) * 0.8; // Green for mid-range\n    color.b = po|(total_pattern, 1.5) * 1.0; // Blue for lower values, stronger presence\n\n    // Add a subtle radial gradient or edge darkening to enhance depth\n    float dist = length(uv);\n    color *= (1.0 - dist * 0.2); // Darken towards edges slightly\n\n    color = clamp(color, 0.0, 1.0);\n    gl_FragColor = vec4(color, 1.0);\n}\n",
+      "poetic_statement": "A temporal distortion, where motion itself becomes a memory, clinging to the edges of perception, bending light around an unseen core.",
+      "generation": 1,
+      "rated": true,
+      "rating": "bad",
+      "dna": [
+        "Symmetrical UV",
+        "sin waves",
+        "inverse power-law damping (e.g.",
+        "1.0 / (1.0 + k * t))",
+        "non-linear color response."
+      ]
+    },
+    {
+      "id": "sketch-gen1-10",
+      "title": "Chaotic Serenity Nexus",
+      "type": "mutation",
+      "hypothesis": "**By introducing a feedback loop where the output of a damped symmetrical sine wave modulates the frequency and amplitude of a 2D Simplex Noise field, a system of emergent, self-organizing organic patterns will form, paradoxically reducing overall visual friction despite inherent complexity.**",
+      "glsl": "```glsl\nprecision mediump float;\nuniform float u_time;\nuniform vec2 u_resolution;\nuniform vec2 u_mouse;\n\n// Simplex Noise (from https://github.com/ashima/webgl-noise/blob/master/src/noise2D.glsl)\nvec3 mod289(vec3 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }\nvec2 mod289(vec2 x) { return x - floor(x * (1.0 / 289.0)) * 289.0; }\nvec3 permute(vec3 x) { return mod289(((x*34.0)+1.0)*x); }\n\nfloat snoise(vec2 v) {\n  const vec4 C = vec4(0.211324865405187,  // (3.0-sqrt(3.0))/6.0\n                      0.366025403784439,  // 0.5*(sqrt(3.0)-1.0)\n                     -0.577350269189626,  // -1.0 + 2.0 * C.x\n                      0.024390243902439); // 1.0 / 41.0\n  vec2 i = floor(v + dot(v, C.yy) );\n  vec2 x0 = v - i + dot(i, C.xx);\n  vec2 i1 = (x0.x > x0.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0);\n  vec4 x12 = x0.xyxy + C.xxzz;\n  x12.xy -= i1;\n  i = mod289(i);\n  vec3 p = permute( permute( i.y + vec3(0.0, i1.y, 1.0 )) + i.x + vec3(0.0, i1.x, 1.0 ));\n  vec3 m = max(0.5 - vec3(dot(x0,x0), dot(x12.xy,x12.xy), dot(x12.zw,x12.zw)), 0.0);\n  m = m*m ;\n  m = m*m ;\n  vec3 x = 2.0 * fract(p * C.www) - 1.0;\n  vec3 h = abs(x) - 0.5;\n  vec3 ox = floor(x + 0.5);\n  vec3 a0 = x - ox;\n  m *= 1.79284291400159 - 0.85373472095314 * ( a0*a0 + h*h );\n  vec3 g;\n  g.x  = a0.x  * x0.x  + h.x  * x0.y;\n  g.yz = a0.yz * x12.xz + h.yz * x12.yw;\n  return 130.0 * dot(m, g);\n}\n\nvoid main() {\n    vec2 uv = gl_FragCoord.xy / u_resolution.xy;\n    uv = uv * 2.0 - 1.0; // Scale to [-1, 1]\n    uv.x *= u_resolution.x / u_resolution.y; // Aspect ratio correction\n\n    // 1. Damped Symmetrical Sine Wave\n    // Combine two sine waves for a more complex, oscillating base pattern\n    float wave_x = sin(uv.x * 7.0 + u_time * 0.6);\n    float wave_y = cos(uv.y * 7.0 + u_time * 0.4);\n    float s_wave_field = wave_x * wave_y;\n\n    // Apply strong damping based on distance from the center, creating a localized nexus\n    float dist_from_center = length(uv);\n    s_wave_field *= exp(-dist_from_center * 2.5);\n\n    // 2. Feedback Loop: s_wave_field modulates snoise frequency and amplitude\n    // Frequency modulation: more intense wave field means higher frequency noise\n    float freq_mod = s_wave_field * 8.0; \n\n    // Amplitude modulation: stronger wave field means higher amplitude noise\n    // A base amplitude ensures noise is always visible, varying more with s_wave_field\n    float amp_mod = 0.6 + abs(s_wave_field) * 0.7; \n\n    // Base coordinates for noise, with a gentle time-based movement\n    vec2 base_noise_coords = uv * (12.0 + freq_mod);\n    vec2 time_offset = vec2(u_time * 0.08, u_time * 0.06);\n\n    // Multiple octaves of Simplex Noise for complex organic flow\n    float total_noise = 0.0;\n    float amplitude = 1.0;\n    float frequency = 1.0;\n\n    for (int i = 0; i < 3; ++i) { // Sum 3 octaves\n        total_noise += snoise(base_noise_coords * frequency + time_offset * float(i+1) * 0.5) * amplitude;\n        amplitude *= 0.5; // Decrease amplitude for higher octaves\n        frequency *= 2.0; // Increase frequency for higher octaves\n    }\n    \n    total_noise *= amp_mod; // Apply the overall amplitude modulation\n\n    // Normalize noise to [0, 1] range for color mapping\n    // snoise returns in [-1, 1], so total_noise will be in a larger range.\n    // A divisor of 0.2 maps the expected range of roughly [-2.275, 2.275] to [~0.045, ~0.955]\n    total_noise = total_noise * 0.2 + 0.5; \n    total_noise = clamp(total_noise, 0.0, 1.0); // Ensure it stays within [0, 1]\n\n    // Color mapping for \"Chaotic Serenity Nexus\"\n    // Blend primary colors based on noise, then introduce s_wave_field influence\n    vec3 col1 = vec3(0.05, 0.15, 0.25); // Deep blue-green for backgrounds\n    vec3 col2 = vec3(0.8, 0.4, 0.1);    // Warm orange for highlights\n    vec3 col3 = vec3(0.3, 0.7, 0.6);    // Soft teal for nexus core\n    vec3 col4 = vec3(0.9, 0.9, 0.8);    // Light almost white for subtle glows\n\n    vec3 final_color = mix(col1, col2, total_noise);\n\n    // Introduce s_wave_field influence directly for the \"nexus\" effect\n    // Stronger wave areas (high abs value) pull colors towards teal and subtle whites\n    float s_wave_influence = abs(s_wave_field);\n    final_color = mix(final_color, col3, s_wave_influence * 0.7); \n    final_color = mix(final_color, col4, s_wave_influence * 0.3 * (1.0 - total_noise)); \n\n    // Final subtle adjustment for overall tinting based on wave direction\n    final_color += s_wave_field * 0.05; \n\n    gl_FragColor = vec4(final_color, 1.0);\n}\n```",
+      "poetic_statement": "From the heart of chaos, a new order emerges, a self-sculpting reality where every ripple informs the next, weaving a tapestry of quiet, intricate life.",
+      "generation": 1,
+      "rated": true,
+      "rating": "good",
+      "dna": [
+        "Symmetrical UV",
+        "sin waves",
+        "damping",
+        "snoise (frequency/amplitude modulated by sin)",
+        "feedback loop concept",
+        "complex organic flow."
+      ]
+    }
+  ],
+  "statistics": {
+    "generations": [
+      {
+        "generation": 1,
+        "goodCount": 4,
+        "badCount": 6,
+        "successRate": 40,
+        "timestamp": "2026-06-27T18:49:59.749Z"
+      }
+    ],
+    "popularTags": [
+      {
+        "tag": "Symmetrical UV",
+        "count": 3
+      },
+      {
+        "tag": "sin + snoise displacement",
+        "count": 1
+      },
+      {
+        "tag": "soft amber overlay.",
+        "count": 1
+      },
+      {
+        "tag": "Symmetrical UV warp",
+        "count": 1
+      },
+      {
+        "tag": "sin for coordinate manipulation",
+        "count": 1
+      },
+      {
+        "tag": "base pattern (e.g.",
+        "count": 1
+      },
+      {
+        "tag": "simple gradient).",
+        "count": 1
+      },
+      {
+        "tag": "single sin wave",
+        "count": 1
+      },
+      {
+        "tag": "very slow damping",
+        "count": 1
+      },
+      {
+        "tag": "radial attenuation",
+        "count": 1
+      }
+    ]
+  }
+}
