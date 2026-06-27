@@ -128,4 +128,4 @@ The app is a single scrolling experience with four regions:
 ## 7. References
 
 * Nam, H., Wan, Y., Liu, M., Ahnn, P., Lian, J., & Jaques, N. (2025/2026). *Learning to summarize user information for personalized reinforcement learning from human feedback.* arXiv:2507.13579. https://arxiv.org/abs/2507.13579
-* Lieberman, Z. — *10 Years of Daily Sketches* (metaphorical framing for 3,650 sketch goal)
+* Lieberman, Z. — [*I spent 10 years making a sketch in code every day*](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) (metaphorical framing for 3,650 sketch goal)

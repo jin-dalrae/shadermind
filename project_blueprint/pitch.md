@@ -35,7 +35,7 @@
 
 * **What it is:** An autonomous GLSL artist that runs continuously — generates 10 shaders, curates them, extracts heuristics, rewrites its strategy, repeats.
 * **No input required** — autopilot drives the full loop. The gallery updates live.
-* **Lieberman metaphor:** 3,650 sketches as a creative north star (Zach Lieberman's 10-year daily practice) — a **count metaphor**, not a calendar.
+* **Lieberman metaphor:** 3,650 sketches as a creative north star ([Zach Lieberman's 10-year daily practice](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d)) — a **count metaphor**, not a calendar.
 * **Output you can read:** Every generation leaves a trace — heuristics with approval rates, reflection notes, timeline milestones.
 
 ---

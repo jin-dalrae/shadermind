@@ -4,7 +4,7 @@
 
 Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It generates WebGL fragment shaders, learns from your **1–5 ratings**, and rewrites an explicit **strategy genome** — a readable preference model inspired by [PLUS](https://arxiv.org/abs/2507.13579) (Preference Learning Using Summarization).
 
-> *"Don't make something new — change one thing each day."* — Zach Lieberman, *10 Years of Daily Sketches* (metaphorical north star: **3,650 sketches**)
+> *"Don't make something new — change one thing each day."* — [Zach Lieberman](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d), *10 Years of Daily Sketches* (metaphorical north star: **3,650 sketches**)
 
 **Hackathon:** 2026 AI Engineer World's Fair · Continual Learning track
 
@@ -185,7 +185,7 @@ shadermind/
 ## References
 
 - Nam, H., Wan, Y., Liu, M., Ahnn, P., Lian, J., & Jaques, N. (2025/2026). *Learning to summarize user information for personalized reinforcement learning from human feedback.* [arXiv:2507.13579](https://arxiv.org/abs/2507.13579)
-- Lieberman, Z. — [*10 Years of Daily Sketches*](https://zach.li) (creative practice metaphor)
+- Lieberman, Z. — [*I spent 10 years making a sketch in code every day*](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d) (creative practice metaphor; 3,650 sketch north star)
 
 ---
 
