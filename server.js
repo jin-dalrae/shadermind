@@ -399,6 +399,7 @@ async function generateBatchInternal(db, userFocus) {
       console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
       glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
     }
+    glsl = decodeGlslField(glsl);
 
     sketches.push({
       id: `sketch-gen${genNum}-${idx + 1}`,

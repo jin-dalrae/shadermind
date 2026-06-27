@@ -77,6 +77,15 @@ export class ShaderRenderer {
     `;
   }
 
+  sanitizeGlslSource(source) {
+    if (typeof source !== "string") return source;
+    let cleaned = source.trim();
+    if (cleaned.startsWith("```")) {
+      cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/, "");
+    }
+    return cleaned.replace(/\\n/g, "\n");
+  }
+
   compile(fragmentShaderSource) {
     this.stop();
     this.error = null;
@@ -84,9 +93,11 @@ export class ShaderRenderer {
     const gl = this.gl;
     if (!gl) return false;
 
+    const glslSource = this.sanitizeGlslSource(fragmentShaderSource);
+
     // Create shader program
     const vertexShader = this.compileShader(gl.VERTEX_SHADER, this.getVertexShaderSource());
-    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, fragmentShaderSource);
+    const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, glslSource);
 
     if (!vertexShader || !fragmentShader) {
       this.drawErrorState(this.error || "Shader compilation failed.");
