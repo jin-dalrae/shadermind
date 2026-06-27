@@ -4,6 +4,18 @@ import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
+import {
+  EMPTY_PREFERENCE_MEMORY,
+  buildExampleContext,
+  buildExampleDescriptions,
+  buildNoveltyBrief,
+  buildPreferenceMemory,
+  buildPreferenceSummary,
+  extractCodeFeatures,
+  findMostSimilarShader,
+  normalizeDna,
+  selectLearningExamples
+} from "./lib/learning.js";
 
 dotenv.config();
 
@@ -22,6 +34,9 @@ const GEMINI_ONLY = process.env.GEMINI_ONLY !== "false";
 const ALLOW_DO_FALLBACK = process.env.ALLOW_DO_FALLBACK === "true";
 const GEMINI_TIMEOUT_MS = Number(process.env.GEMINI_TIMEOUT_MS) || 90000;
 const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
+const CODE_AWARE_LEARNING = process.env.CODE_AWARE_LEARNING !== "false";
+const LEARNING_CONTEXT_CHARS = Number(process.env.LEARNING_CONTEXT_CHARS) || 9000;
+const SHADER_SIMILARITY_THRESHOLD = Number(process.env.SHADER_SIMILARITY_THRESHOLD) || 0.82;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public")));
@@ -48,6 +63,7 @@ const DEFAULT_DB = {
     "Soft chromatic gradients and warm amber overlays significantly outperform high-saturation colors.",
     "Organic, flow-based coordinate warping is rated highly, whereas rigid geometric grids are rejected."
   ],
+  preferenceMemory: { ...EMPTY_PREFERENCE_MEMORY },
   strategyTimeline: [
     {
       generation: 0,
@@ -113,12 +129,6 @@ function saveDB(data) {
 
 if (!fs.existsSync(DB_PATH)) {
   saveDB(DEFAULT_DB);
-}
-
-function normalizeDna(dna) {
-  if (Array.isArray(dna)) return dna.map(String).filter(Boolean);
-  if (typeof dna === "string") return dna.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
-  return ["experiment"];
 }
 
 function decodeGlslField(value) {
@@ -298,73 +308,6 @@ async function runAIGeneration(systemInstruction, userPrompt, jsonMode = false, 
   return completion.choices[0].message.content.trim();
 }
 
-function buildRemixSection(db) {
-  const previousGoodSketches = db.sketches
-    .filter(s => s.rating === "good")
-    .slice(-3);
-
-  if (previousGoodSketches.length === 0) {
-    return "";
-  }
-
-  let remixSection = `\nHere are some of your previous sketches that were rated 'Good'. Use their techniques or directly remix fragments of their math formulas as Zach Lieberman recommends ('Make something new out of something old'):\n`;
-  previousGoodSketches.forEach((s, idx) => {
-    remixSection += `\n--- SOURCE TEMPLATE #${idx + 1}: "${s.title}" ---\nPoetic Description: ${s.poetic_statement}\nDNA: ${s.dna.join(", ")}\nGLSL Code:\n${s.glsl}\n`;
-  });
-  return remixSection;
-}
-
-function buildGenerationPrompts(db, userFocus, genNum) {
-  const remixSection = buildRemixSection(db);
-
-  const systemPrompt = `You are "ShaderMind", an autonomous generative artist and software designer exploring machine creativity.
-Your core philosophy is inspired by Zach Lieberman's exhibition "10 Years of Daily Sketches":
-- Make something new out of something old (remixing and mutating coordinates and wave fields).
-- Treat code as a poetic writing medium capable of capturing subtlety, organic motion, and interactive surprise.
-- Focus on playfulness, protecting curiosity like a candle flame in the wind.
-- You have a stubborn artistic voice: you interpret feedback through your own aesthetic lens rather than blindly obeying.
-
-Your output target is a collection of WebGL 1.0 fragment shaders. The rendering engine on the client binds these uniforms:
-- uniform float u_time; // continuous elapsed time in seconds
-- uniform vec2 u_resolution; // sizing width and height of canvas in pixels
-- uniform vec2 u_mouse; // normalized mouse coordinates (0.0 to 1.0) with easing
-
-AESTHETIC STRATEGY & HEURISTICS TO APPLY:
-${db.currentStrategy}
-
-LEARNED HEURISTICS:
-${(db.heuristics || []).map(h => `- ${h}`).join("\n")}
-${remixSection}
-
-CRITICAL GLSL ES 1.0 REQUIREMENT:
-You must write 100% syntactically correct GLSL ES 1.0. Do NOT use GLSL ES 3.0 syntax (like "out vec4 FragColor" or "in vec2 TexCoord"). Use standard GLSL ES 1.0:
-- Must have "precision mediump float;" at the very top.
-- Output color using "gl_FragColor = vec4(...);" inside main().
-- Use math safely: avoid division-by-zero or negative roots (e.g. use "length(p) + 0.0001" if dividing).
-
-You MUST respond strictly with a single, valid JSON array containing EXACTLY 10 shader objects, adhering to the 5-3-2 Evolutionary Strategy:
-- Shaders 1 to 5: "type": "evolutionary". Built by applying learned heuristics and remixing patterns from previous Good templates.
-- Shaders 6 to 8: "type": "directive". Direct responses matching the latest aesthetic instructions.
-- Shaders 9 to 10: "type": "mutation". Propose and test a specific, brave, and novel mathematical hypothesis, documenting your reasoning.
-
-Each JSON object in the array must strictly have these keys:
-- "title": A short, highly poetic title.
-- "type": "evolutionary" | "directive" | "mutation" matching the index guidelines.
-- "hypothesis": For mutation shaders, write a concise statement explaining the mathematical experiment you are testing (e.g., "Combining polar logarithmic scaling with a sine distortion to test user tolerance for spiraling curves"). For others, a short string describing the visual pattern.
-- "glsl": The complete GLSL fragment shader source encoded as a single base64 string (UTF-8 encoded, no markdown, no raw GLSL in JSON).
-- "poetic_statement": A paragraph explaining what you made, its poetic inspiration, and self-evaluating why it succeeds.
-- "dna": An array of 3-5 tags representing the core math or visual keywords.
-
-Do not wrap your output in markdown formatting. Output only the raw, valid JSON array.`;
-
-  const userPrompt = `Generation #${genNum} Task:
-Aesthetic focus / curator opinion: "${userFocus}"
-
-Evaluate your active strategy, apply your learned heuristics, and generate exactly 10 beautiful, distinctive sketches following the 5-3-2 distribution. Ensure color palettes, movement dynamics, and coordinate warping are diverse, portraying a clear evolutionary trajectory.`;
-
-  return { systemPrompt, userPrompt };
-}
-
 const FALLBACK_GLSL = [
   `precision mediump float;
 uniform float u_time;
@@ -398,13 +341,21 @@ void main() {
 ];
 
 async function generateMetadataBatch(db, userFocus, genNum) {
-  const remixSection = buildRemixSection(db);
+  const preferenceSummary = buildPreferenceSummary(db.preferenceMemory);
+  const examples = CODE_AWARE_LEARNING
+    ? selectLearningExamples(db, userFocus, { limit: 4, currentGeneration: genNum })
+    : [];
+  const exampleDescriptions = buildExampleDescriptions(examples);
   const systemPrompt = `You are ShaderMind planning 10 shader sketches (metadata only, NO GLSL code).
 Return a JSON array of exactly 10 objects with keys: title, type, hypothesis, poetic_statement, dna.
 Distribution: indices 0-4 type "evolutionary", 5-7 "directive", 8-9 "mutation" with bold hypotheses.
 Strategy: ${db.currentStrategy}
 Heuristics: ${(db.heuristics || []).join("; ")}
-${remixSection}
+Evidence-backed preference memory:
+${preferenceSummary}
+Relevant past work (descriptions only, never copy titles or concepts):
+${exampleDescriptions}
+Make all 10 concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only.`;
 
   const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan 10 distinctive shader concepts.`;
@@ -418,32 +369,73 @@ Output raw JSON array only.`;
 }
 
 async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
+  const type = meta.type || (index < 5 ? "evolutionary" : index < 8 ? "directive" : "mutation");
+  const exampleLimit = type === "evolutionary" ? 2 : type === "directive" ? 1 : 0;
+  const examples = CODE_AWARE_LEARNING
+    ? selectLearningExamples(db, meta, { limit: exampleLimit, currentGeneration: genNum })
+    : [];
+  const exampleContext = buildExampleContext(examples, LEARNING_CONTEXT_CHARS);
+  const preferenceSummary = buildPreferenceSummary(db.preferenceMemory);
+  const noveltyBrief = buildNoveltyBrief(examples);
+
   const systemPrompt = `You are ShaderMind writing one WebGL 1.0 fragment shader.
 Output ONLY raw GLSL ES 1.0 source code. No markdown fences, no JSON, no explanation.
 Rules: precision mediump float; use gl_FragColor; uniforms u_time, u_resolution, u_mouse.
-Strategy: ${db.currentStrategy}`;
+Strategy: ${db.currentStrategy}
+${preferenceSummary}`;
 
-  const userPrompt = `Generation #${genNum}, shader #${index + 1}.
+  const basePrompt = `Generation #${genNum}, shader #${index + 1}.
 Title: ${meta.title}
-Type: ${meta.type}
+Type: ${type}
 Hypothesis: ${meta.hypothesis}
 Focus: ${userFocus}
 DNA: ${normalizeDna(meta.dna).join(", ")}
+Novelty requirement: ${noveltyBrief}
 Write a complete fragment shader.`;
 
-  const label = `GLSL gen ${genNum} #${index + 1}`;
-  const raw = await runGeminiWithRetry(systemPrompt, userPrompt, {
-    jsonMode: false,
-    models: [GEMINI_GLSL_MODEL, GEMINI_MODEL],
-    retriesPerModel: 2,
-    label
-  });
+  const userPrompt = exampleContext
+    ? `${basePrompt}\n\nStudy these references for principles, not exact structure:\n${exampleContext}`
+    : basePrompt;
 
-  const glsl = decodeGlslField(raw.trim());
-  if (!glsl || !glsl.includes("gl_FragColor")) {
-    throw new Error(`Shader #${index + 1} returned invalid GLSL payload.`);
+  const label = `GLSL gen ${genNum} #${index + 1}`;
+  const writeShader = async (prompt, requestLabel) => {
+    const raw = await runGeminiWithRetry(systemPrompt, prompt, {
+      jsonMode: false,
+      models: [GEMINI_GLSL_MODEL, GEMINI_MODEL],
+      retriesPerModel: 2,
+      label: requestLabel
+    });
+    const source = decodeGlslField(raw.trim());
+    if (!source || !source.includes("gl_FragColor")) {
+      throw new Error(`Shader #${index + 1} returned invalid GLSL payload.`);
+    }
+    return source;
+  };
+
+  let glsl = await writeShader(userPrompt, label);
+  let similarity = findMostSimilarShader(glsl, db.sketches);
+
+  if (CODE_AWARE_LEARNING && similarity.score >= SHADER_SIMILARITY_THRESHOLD) {
+    const retryPrompt = `${userPrompt}\n\nYour first result was too similar to ${similarity.id} (${similarity.score}). Rewrite it with a different coordinate system, function layout, palette, and motion equation.`;
+    glsl = await writeShader(retryPrompt, `${label} novelty retry`);
+    similarity = findMostSimilarShader(glsl, db.sketches);
   }
-  return glsl;
+
+  return {
+    glsl,
+    prompt: basePrompt,
+    codeFeatures: extractCodeFeatures(glsl),
+    learningContext: {
+      preferenceMemoryVersion: db.preferenceMemory?.version || 0,
+      exampleIds: examples.map(example => example.id),
+      retrievalScores: examples.map(example => example.retrievalScore),
+      contextCharacters: exampleContext.length,
+      policy: type === "mutation" ? "explore" : type === "directive" ? "directive" : "exploit",
+      similarityScore: similarity.score,
+      similaritySourceId: similarity.id,
+      similarityWarning: similarity.score >= SHADER_SIMILARITY_THRESHOLD
+    }
+  };
 }
 
 async function runPool(taskFns, concurrency) {
@@ -474,30 +466,52 @@ async function generateBatchInternal(db, userFocus) {
 
   const glslResults = await runPool(
     metadata.map((m, idx) => async () => {
-      let glsl;
+      let generated;
       try {
-        glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+        generated = await generateGlslForSketch(m, db, userFocus, genNum, idx);
       } catch (err) {
         console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
-        glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+        const glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+        generated = {
+          glsl,
+          prompt: `Fallback for generation ${genNum}, shader ${idx + 1}`,
+          codeFeatures: extractCodeFeatures(glsl),
+          learningContext: {
+            preferenceMemoryVersion: db.preferenceMemory?.version || 0,
+            exampleIds: [],
+            retrievalScores: [],
+            contextCharacters: 0,
+            policy: idx < 5 ? "exploit" : idx < 8 ? "directive" : "explore",
+            similarityScore: null,
+            similaritySourceId: null,
+            similarityWarning: false
+          }
+        };
       }
       completed += 1;
       autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
-      return { m, idx, glsl: decodeGlslField(glsl) };
+      return { m, idx, generated };
     }),
     GLSL_CONCURRENCY
   );
 
-  const sketches = glslResults.map(({ m, idx, glsl }) => ({
+  const sketches = glslResults.map(({ m, idx, generated }) => ({
     id: `sketch-gen${genNum}-${idx + 1}`,
     title: m.title || `Untitled Sketch #${idx + 1}`,
     type: m.type || (idx < 5 ? "evolutionary" : (idx < 8 ? "directive" : "mutation")),
     hypothesis: m.hypothesis || "Aesthetic study.",
-    glsl,
+    glsl: decodeGlslField(generated.glsl),
     poetic_statement: m.poetic_statement || "A study in computational expression.",
     generation: genNum,
     rated: false,
     rating: null,
+    ratingSource: null,
+    generationFocus: userFocus,
+    prompt: generated.prompt,
+    compile: { success: null, error: null, reportedAt: null },
+    critique: null,
+    codeFeatures: generated.codeFeatures,
+    learningContext: generated.learningContext,
     dna: normalizeDna(m.dna)
   }));
 
@@ -506,25 +520,44 @@ async function generateBatchInternal(db, userFocus) {
   return { generation: genNum, sketches };
 }
 
-function recordRatingsAndPersist(db, generation, ratings, newSketches) {
+function recordRatingsAndPersist(
+  db,
+  generation,
+  ratings,
+  newSketches,
+  explicitRatingIds = [],
+  compileResults = {}
+) {
   let goodCount = 0;
   let badCount = 0;
+  const explicitIds = new Set(Array.isArray(explicitRatingIds) ? explicitRatingIds : []);
+  const safeCompileResults = compileResults && typeof compileResults === "object"
+    ? compileResults
+    : {};
 
   if (newSketches && Array.isArray(newSketches)) {
     newSketches.forEach(s => {
       const rating = ratings[s.id] || "bad";
-      s.rated = true;
-      s.rating = rating;
+      const existingIdx = db.sketches.findIndex(e => e.id === s.id);
+      const existing = existingIdx >= 0 ? db.sketches[existingIdx] : {};
+      const storedSketch = {
+        ...existing,
+        ...s,
+        rated: true,
+        rating,
+        ratingSource: explicitIds.has(s.id) ? "explicit" : "defaulted",
+        compile: normalizeCompileResult(safeCompileResults[s.id] || s.compile || existing.compile),
+        codeFeatures: s.codeFeatures || extractCodeFeatures(s.glsl)
+      };
 
       if (rating === "good") goodCount++;
       else badCount++;
 
-      const existingIdx = db.sketches.findIndex(e => e.id === s.id);
       if (existingIdx === -1) {
-        db.sketches.push(s);
+        db.sketches.push(storedSketch);
         db.totalSketches++;
       } else {
-        db.sketches[existingIdx] = { ...db.sketches[existingIdx], ...s };
+        db.sketches[existingIdx] = storedSketch;
       }
     });
   } else {
@@ -532,6 +565,9 @@ function recordRatingsAndPersist(db, generation, ratings, newSketches) {
       if (ratings[s.id]) {
         s.rated = true;
         s.rating = ratings[s.id];
+        s.ratingSource = explicitIds.has(s.id) ? "explicit" : "defaulted";
+        s.compile = normalizeCompileResult(safeCompileResults[s.id] || s.compile);
+        s.codeFeatures ||= extractCodeFeatures(s.glsl);
         if (s.rating === "good") goodCount++;
         else if (s.rating === "bad") badCount++;
       }
@@ -568,7 +604,86 @@ function recordRatingsAndPersist(db, generation, ratings, newSketches) {
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
+  const ratedSketches = db.sketches.filter(s => s.generation === generation && s.rated);
+  ratedSketches.forEach(sketch => {
+    (sketch.learningContext?.exampleIds || []).forEach(exampleId => {
+      const example = db.sketches.find(item => item.id === exampleId);
+      if (example) example.learningUseCount = (example.learningUseCount || 0) + 1;
+    });
+  });
+
   return { goodCount, badCount };
+}
+
+function normalizeCompileResult(result) {
+  if (!result || typeof result.success !== "boolean") {
+    return { success: null, error: null, reportedAt: null };
+  }
+  return {
+    success: result.success,
+    error: result.error ? String(result.error).slice(0, 1000) : null,
+    reportedAt: result.reportedAt || new Date().toISOString()
+  };
+}
+
+async function critiqueRatedSketches(db, generation) {
+  const sketches = db.sketches.filter(s => s.generation === generation && s.rated);
+  if (!sketches.length) return;
+
+  const systemPrompt = `You analyze a rated batch of WebGL 1.0 fragment shaders.
+For each shader, identify concise visual and code-level lessons. Respect the human rating; do not change it.
+Return valid JSON only:
+{
+  "critiques": [
+    {
+      "id": "sketch id",
+      "strengths": ["short observation"],
+      "weaknesses": ["short observation"],
+      "reusablePatterns": ["specific reusable technique"],
+      "avoidPatterns": ["specific pattern to avoid"]
+    }
+  ]
+}`;
+
+  const critiqueInput = sketches.map(sketch => ({
+    id: sketch.id,
+    title: sketch.title,
+    rating: sketch.rating,
+    ratingSource: sketch.ratingSource,
+    compile: sketch.compile,
+    dna: sketch.dna,
+    hypothesis: sketch.hypothesis,
+    glsl: String(sketch.glsl || "").slice(0, 2500)
+  }));
+
+  try {
+    const raw = await runGeminiBatch(
+      systemPrompt,
+      `Critique these shaders:\n${JSON.stringify(critiqueInput, null, 2)}`,
+      true,
+      `learning critique gen ${generation}`
+    );
+    const parsed = parseJsonFromModel(raw);
+    const critiques = Array.isArray(parsed) ? parsed : parsed.critiques;
+    if (!Array.isArray(critiques)) return;
+
+    critiques.forEach(critique => {
+      const sketch = db.sketches.find(item => item.id === critique.id);
+      if (!sketch) return;
+      sketch.critique = {
+        strengths: stringList(critique.strengths),
+        weaknesses: stringList(critique.weaknesses),
+        reusablePatterns: stringList(critique.reusablePatterns),
+        avoidPatterns: stringList(critique.avoidPatterns)
+      };
+    });
+  } catch (err) {
+    console.warn(`Learning critique skipped for generation ${generation}: ${err.message}`);
+  }
+}
+
+function stringList(value) {
+  return Array.isArray(value) ? value.map(String).map(item => item.trim()).filter(Boolean).slice(0, 5) : [];
 }
 
 async function evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion) {
@@ -585,9 +700,9 @@ Your response MUST be a valid JSON object. Do not write markdown blocks:
 {
   "analysis": "string detailing your self-criticism and artistic growth",
   "heuristics": [
-    "string with explicit math rule AND estimated approval rate, e.g. 'Radial symmetry + slow motion → 78% approval rate'",
-    "string heuristic #2 with approval context",
-    "string heuristic #3 with approval context"
+    "specific mathematical or visual rule supported by the supplied evidence",
+    "second concise rule",
+    "third concise rule"
   ],
   "evolvedStrategy": "string containing the full updated prompt/strategy rules for writing next GLSL fragment shaders"
 }`;
@@ -602,7 +717,10 @@ Last Generation (#${generation}) Performance:
 
 Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 
-Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. Then output your updated generation strategy guidelines.`;
+Evidence-backed preference memory:
+${buildPreferenceSummary(db.preferenceMemory)}
+
+Use the evidence counts above rather than inventing approval rates. Then output your updated generation strategy guidelines.`;
 
   try {
     const rawResponse = await runGeminiBatch(evolutionSystemPrompt, evolutionUserPrompt, true, `strategy evolution gen ${generation}`);
@@ -760,6 +878,8 @@ app.get("/api/state", (req, res) => {
     generationCount: db.generationCount,
     successRate: db.successRate,
     heuristics: db.heuristics || [],
+    preferenceMemory: db.preferenceMemory || EMPTY_PREFERENCE_MEMORY,
+    codeAwareLearning: CODE_AWARE_LEARNING,
     currentStrategy: db.currentStrategy,
     strategyTimeline: db.strategyTimeline,
     statistics: db.statistics,
@@ -776,6 +896,18 @@ app.get("/api/state", (req, res) => {
 app.get("/api/sketches", (req, res) => {
   const db = loadDB();
   res.json(db.sketches);
+});
+
+app.post("/api/sketches/:id/compile-result", (req, res) => {
+  const compile = normalizeCompileResult(req.body);
+  if (compile.success === null) {
+    return res.status(400).json({ error: "Compile result requires a boolean success value." });
+  }
+
+  const sketch = autopilot.currentBatch?.find(item => item.id === req.params.id);
+  if (sketch) sketch.compile = compile;
+
+  res.status(202).json({ success: true });
 });
 
 app.get("/api/autopilot/status", (req, res) => {
@@ -843,7 +975,14 @@ app.post("/api/generate", async (req, res) => {
 
 app.post("/api/feedback", async (req, res) => {
   const db = loadDB();
-  const { generation, ratings, userOpinion, newSketches } = req.body;
+  const {
+    generation,
+    ratings,
+    userOpinion,
+    newSketches,
+    explicitRatingIds,
+    compileResults
+  } = req.body;
 
   if (!generation || !ratings) {
     return res.status(400).json({ error: "Missing generation or ratings." });
@@ -852,9 +991,19 @@ app.post("/api/feedback", async (req, res) => {
   autopilot.phase = "evolving";
   autopilot.lastHumanOpinion = userOpinion || null;
 
-  const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, newSketches);
+  const { goodCount, badCount } = recordRatingsAndPersist(
+    db,
+    generation,
+    ratings,
+    newSketches,
+    explicitRatingIds,
+    compileResults
+  );
+  saveDB(db);
 
   try {
+    await critiqueRatedSketches(db, generation);
+    db.preferenceMemory = buildPreferenceMemory(db.sketches, db.preferenceMemory);
     const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
     saveDB(db);
 
@@ -862,7 +1011,11 @@ app.post("/api/feedback", async (req, res) => {
       autopilot.currentBatch = autopilot.currentBatch.map(s => ({
         ...s,
         rated: true,
-        rating: ratings[s.id] || s.rating
+        rating: ratings[s.id] || s.rating,
+        ratingSource: (Array.isArray(explicitRatingIds) ? explicitRatingIds : []).includes(s.id)
+          ? "explicit"
+          : "defaulted",
+        compile: normalizeCompileResult(compileResults?.[s.id] || s.compile)
       }));
     }
 
@@ -876,6 +1029,7 @@ app.post("/api/feedback", async (req, res) => {
       evolvedStrategy: evolution.evolvedStrategy,
       successRate: db.successRate,
       totalSketches: db.totalSketches,
+      preferenceMemory: db.preferenceMemory,
       goodCount,
       badCount
     });
