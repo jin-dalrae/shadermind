@@ -1,14 +1,17 @@
 /**
- * ShaderRenderer
- * Highly robust WebGL compiler and quad renderer for GLSL ES 1.0.
- * Injects u_time, u_resolution, and u_mouse uniforms.
- * Catches compilation errors and renders them visually in the canvas.
+ * ShaderRenderer — WebGL 1.0 quad renderer for GLSL ES fragment shaders.
+ * Injects u_time, u_resolution, u_mouse uniforms.
  */
 export class ShaderRenderer {
   constructor(canvas) {
     this.canvas = canvas;
-    this.gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+    this.gl = canvas.getContext("webgl", {
+      alpha: false,
+      antialias: false,
+      preserveDrawingBuffer: true
+    }) || canvas.getContext("experimental-webgl");
     this.program = null;
+    this.positionLocation = -1;
     this.animationFrameId = null;
     this.startTime = Date.now();
     this.mouseX = 0.5;
@@ -16,11 +19,11 @@ export class ShaderRenderer {
     this.targetMouseX = 0.5;
     this.targetMouseY = 0.5;
     this.error = null;
-    this.isHovered = false;
+    this.resizeObserver = null;
 
     if (!this.gl) {
-      this.error = "WebGL not supported by this browser.";
-      this.drawErrorState(this.error);
+      this.error = "WebGL not supported.";
+      this.showError(this.error);
       return;
     }
 
@@ -30,48 +33,33 @@ export class ShaderRenderer {
 
   initGeometry() {
     const gl = this.gl;
-    
-    // Simple 2D Quad (two triangles covering the viewport)
     const vertices = new Float32Array([
-      -1.0, -1.0,
-       1.0, -1.0,
-      -1.0,  1.0,
-      -1.0,  1.0,
-       1.0, -1.0,
-       1.0,  1.0,
+      -1, -1, 1, -1, -1, 1,
+      -1, 1, 1, -1, 1, 1
     ]);
-
     this.buffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
     gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
   }
 
   setupMouseListeners() {
-    // Keep track of normalized mouse position inside canvas
     this.canvas.addEventListener("mousemove", (e) => {
       const rect = this.canvas.getBoundingClientRect();
+      if (rect.width <= 0) return;
       this.targetMouseX = (e.clientX - rect.left) / rect.width;
-      this.targetMouseY = 1.0 - ((e.clientY - rect.top) / rect.height); // Flip Y to match WebGL Cartesian coordinates
+      this.targetMouseY = 1.0 - (e.clientY - rect.top) / rect.height;
     });
-
-    this.canvas.addEventListener("mouseenter", () => {
-      this.isHovered = true;
-    });
-
     this.canvas.addEventListener("mouseleave", () => {
-      this.isHovered = false;
       this.targetMouseX = 0.5;
       this.targetMouseY = 0.5;
     });
   }
 
-  // Baseline standard vertex shader
   getVertexShaderSource() {
     return `
+      precision mediump float;
       attribute vec2 position;
-      varying vec2 v_texCoord;
       void main() {
-        v_texCoord = position * 0.5 + 0.5;
         gl_Position = vec4(position, 0.0, 1.0);
       }
     `;
@@ -87,86 +75,126 @@ export class ShaderRenderer {
     cleaned = cleaned.replace(/\bout\s+vec4\s+FragColor\s*;/g, "");
     cleaned = cleaned.replace(/\bFragColor\s*=/g, "gl_FragColor =");
     cleaned = cleaned.replace(/\btexture\s*\(/g, "texture2D(");
-    if (!cleaned.includes("precision")) {
+    if (!/\bprecision\s+(lowp|mediump|highp)\s+float/.test(cleaned)) {
       cleaned = `precision mediump float;\n${cleaned}`;
     }
     return cleaned;
   }
 
+  ensureCanvasSize() {
+    const rect = this.canvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const w = Math.max(1, Math.floor(rect.width * dpr));
+    const h = Math.max(1, Math.floor(rect.height * dpr));
+    if (this.canvas.width !== w || this.canvas.height !== h) {
+      this.canvas.width = w;
+      this.canvas.height = h;
+    }
+    return { width: w, height: h };
+  }
+
+  isLayoutReady() {
+    const rect = this.canvas.getBoundingClientRect();
+    return rect.width >= 48 && rect.height >= 48;
+  }
+
   compile(fragmentShaderSource) {
     this.stop();
     this.error = null;
+    this.hideError();
 
     const gl = this.gl;
     if (!gl) return false;
 
-    const glslSource = this.sanitizeGlslSource(fragmentShaderSource);
+    if (!this.isLayoutReady()) {
+      return false;
+    }
 
-    // Create shader program
+    const { width, height } = this.ensureCanvasSize();
+    if (width < 48 || height < 48) return false;
+
+    const glslSource = this.sanitizeGlslSource(fragmentShaderSource);
     const vertexShader = this.compileShader(gl.VERTEX_SHADER, this.getVertexShaderSource());
     const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, glslSource);
 
     if (!vertexShader || !fragmentShader) {
-      this.drawErrorState(this.error || "Shader compilation failed.");
+      this.showError(this.error || "Shader compilation failed.");
       return false;
     }
 
     const program = gl.createProgram();
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
+    gl.bindAttribLocation(program, 0, "position");
     gl.linkProgram(program);
 
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      this.error = `Program Link Error: ${gl.getProgramInfoLog(program)}`;
-      gl.deleteProgram(program);
-      this.drawErrorState(this.error);
-      return false;
-    }
-
-    this.program = program;
-    
-    // Clean up individual shaders as they are now linked
     gl.deleteShader(vertexShader);
     gl.deleteShader(fragmentShader);
 
-    this.ensureCanvasSize();
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      this.error = `Link error: ${gl.getProgramInfoLog(program) || "unknown"}`;
+      gl.deleteProgram(program);
+      this.showError(this.error);
+      return false;
+    }
+
+    if (this.program) {
+      gl.deleteProgram(this.program);
+    }
+    this.program = program;
+    this.positionLocation = gl.getAttribLocation(program, "position");
+
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
+
     this.start();
     return true;
   }
 
-  ensureCanvasSize() {
-    const parent = this.canvas.parentElement;
-    const rect = parent?.getBoundingClientRect();
-    const w = Math.max(2, Math.floor(rect?.width || this.canvas.clientWidth || 300));
-    const h = Math.max(2, Math.floor(rect?.height || this.canvas.clientHeight || 300));
-    if (this.canvas.width !== w || this.canvas.height !== h) {
-      this.canvas.width = w;
-      this.canvas.height = h;
-      if (this.gl) this.gl.viewport(0, 0, w, h);
-    }
-  }
-
   compileWhenReady(fragmentShaderSource) {
     const source = this.sanitizeGlslSource(fragmentShaderSource);
-    const attempt = () => this.compile(source);
+    let attempts = 0;
+    const maxAttempts = 30;
 
-    if (attempt()) return true;
+    const tryCompile = () => {
+      attempts += 1;
+      if (this.compile(source)) {
+        this.disconnectResizeObserver();
+        return true;
+      }
+      return false;
+    };
 
+    if (tryCompile()) return true;
+
+    this.disconnectResizeObserver();
     const parent = this.canvas.parentElement;
-    if (!parent) return false;
-
-    const observer = new ResizeObserver(() => {
-      if (attempt()) observer.disconnect();
-    });
-    observer.observe(parent);
-
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        if (attempt()) observer.disconnect();
+    if (parent && typeof ResizeObserver !== "undefined") {
+      this.resizeObserver = new ResizeObserver(() => {
+        if (tryCompile()) this.disconnectResizeObserver();
       });
-    });
+      this.resizeObserver.observe(parent);
+    }
+
+    const poll = () => {
+      if (tryCompile()) return;
+      if (attempts < maxAttempts) {
+        requestAnimationFrame(poll);
+      } else {
+        this.showError(this.error || "Shader failed to compile.");
+      }
+    };
+    requestAnimationFrame(() => requestAnimationFrame(poll));
 
     return false;
+  }
+
+  disconnectResizeObserver() {
+    if (this.resizeObserver) {
+      this.resizeObserver.disconnect();
+      this.resizeObserver = null;
+    }
   }
 
   compileShader(type, source) {
@@ -177,23 +205,22 @@ export class ShaderRenderer {
 
     if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
       const typeName = type === gl.VERTEX_SHADER ? "Vertex" : "Fragment";
-      const infoLog = gl.getShaderInfoLog(shader) || gl.getProgramInfoLog(shader);
-      const detail = (infoLog && infoLog.trim()) ? infoLog.trim() : "unknown error (no driver log)";
-      this.error = `${typeName} shader failed: ${detail}`;
+      const log = gl.getShaderInfoLog(shader);
+      this.error = `${typeName} shader: ${(log && log.trim()) || "compile failed"}`;
       gl.deleteShader(shader);
       return null;
     }
-
     return shader;
   }
 
   start() {
     this.startTime = Date.now();
-    const renderLoop = () => {
+    const loop = () => {
       this.render();
-      this.animationFrameId = requestAnimationFrame(renderLoop);
+      this.animationFrameId = requestAnimationFrame(loop);
     };
-    this.animationFrameId = requestAnimationFrame(renderLoop);
+    if (this.animationFrameId) cancelAnimationFrame(this.animationFrameId);
+    this.animationFrameId = requestAnimationFrame(loop);
   }
 
   stop() {
@@ -203,71 +230,82 @@ export class ShaderRenderer {
     }
   }
 
+  destroy() {
+    this.stop();
+    this.disconnectResizeObserver();
+    if (this.gl && this.program) {
+      this.gl.deleteProgram(this.program);
+      this.program = null;
+    }
+  }
+
   render() {
     const gl = this.gl;
     if (!gl || !this.program) return;
 
-    // Handle mouse easing
+    const { width, height } = this.ensureCanvasSize();
+    if (width < 2 || height < 2) return;
+
     const easing = 0.1;
     this.mouseX += (this.targetMouseX - this.mouseX) * easing;
     this.mouseY += (this.targetMouseY - this.mouseY) * easing;
 
-    this.ensureCanvasSize();
-    const width = this.canvas.width;
-    const height = this.canvas.height;
+    gl.viewport(0, 0, width, height);
+    gl.clearColor(0, 0, 0, 1);
+    gl.clear(gl.COLOR_BUFFER_BIT);
 
     gl.useProgram(this.program);
 
-    // Bind buffer attributes
-    const positionLocation = gl.getAttribLocation(this.program, "position");
-    gl.enableVertexAttribArray(positionLocation);
+    const posLoc = this.positionLocation;
+    if (posLoc < 0) return;
+
     gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-    // Set Uniforms
-    const timeLocation = gl.getUniformLocation(this.program, "u_time");
-    if (timeLocation !== null) {
-      const elapsedSeconds = (Date.now() - this.startTime) / 1000.0;
-      gl.uniform1f(timeLocation, elapsedSeconds);
+    const tLoc = gl.getUniformLocation(this.program, "u_time");
+    if (tLoc !== null) {
+      gl.uniform1f(tLoc, (Date.now() - this.startTime) / 1000.0);
     }
 
-    const resolutionLocation = gl.getUniformLocation(this.program, "u_resolution");
-    if (resolutionLocation !== null) {
-      gl.uniform2f(resolutionLocation, this.canvas.width, this.canvas.height);
+    const rLoc = gl.getUniformLocation(this.program, "u_resolution");
+    if (rLoc !== null) {
+      gl.uniform2f(rLoc, width, height);
     }
 
-    const mouseLocation = gl.getUniformLocation(this.program, "u_mouse");
-    if (mouseLocation !== null) {
-      gl.uniform2f(mouseLocation, this.mouseX, this.mouseY);
+    const mLoc = gl.getUniformLocation(this.program, "u_mouse");
+    if (mLoc !== null) {
+      gl.uniform2f(mLoc, this.mouseX, this.mouseY);
     }
 
-    // Draw
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
-  drawErrorState(errorMessage) {
-    this.stop();
-    const gl = this.gl;
-    if (!gl) return;
-
-    // Renders a beautiful cyberpunk compilation fail error directly inside the canvas using 2D fallback or canvas clear colors
-    console.error("WebGL Renderer Error boundary caught compiler crash:", errorMessage);
-
-    // Simple visual error: Clear canvas to flat terminal warning red/black scanline color
-    this.ensureCanvasSize();
-    gl.viewport(0, 0, this.canvas.width, this.canvas.height);
-    gl.clearColor(0.04, 0.0, 0.0, 1.0); // very dark red
-    gl.clear(gl.COLOR_BUFFER_BIT);
-
-    // Let's overlay an HTML error message in the parent card node!
+  showError(message) {
+    console.error("ShaderRenderer:", message);
     const container = this.canvas.parentElement;
-    if (container) {
-      const errOverlay = container.querySelector(".shader-error, .shader-error-overlay");
-      if (errOverlay) {
-        const short = errorMessage.length > 180 ? `${errorMessage.slice(0, 180)}…` : errorMessage;
-        errOverlay.textContent = short.replace(/\n/g, " ");
-        errOverlay.classList.add("active");
-      }
+    if (!container) return;
+    const errEl = container.querySelector(".shader-error");
+    if (errEl) {
+      const short = message.length > 200 ? `${message.slice(0, 200)}…` : message;
+      errEl.textContent = short.replace(/\n/g, " ");
+      errEl.classList.add("active");
+    }
+    const gl = this.gl;
+    if (gl) {
+      const { width, height } = this.ensureCanvasSize();
+      gl.viewport(0, 0, width, height);
+      gl.clearColor(0.06, 0.02, 0.02, 1);
+      gl.clear(gl.COLOR_BUFFER_BIT);
+    }
+  }
+
+  hideError() {
+    const container = this.canvas.parentElement;
+    const errEl = container?.querySelector(".shader-error");
+    if (errEl) {
+      errEl.classList.remove("active");
+      errEl.textContent = "";
     }
   }
 }

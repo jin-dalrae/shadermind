@@ -264,18 +264,16 @@ section {
 .shader-canvas-wrap {
   position: relative;
   width: 100%;
-  padding-bottom: 100%;
+  aspect-ratio: 1 / 1;
+  min-height: 160px;
   background: #000;
   overflow: hidden;
 }
 
 .shader-canvas-wrap canvas {
-  position: absolute;
-  top: 0;
-  left: 0;
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
 }
 
 .rating-badge {

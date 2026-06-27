@@ -61,6 +61,14 @@ function normalizeDna(dna) {
   return ["experiment"];
 }
 
+function prepareSketchForClient(sketch) {
+  if (!sketch) return sketch;
+  return {
+    ...sketch,
+    glsl: typeof sketch.glsl === "string" ? decodeGlslField(sketch.glsl) : sketch.glsl
+  };
+}
+
 function buildGenerationPrompts(db, userFocus, genNum) {
   const remixSection = buildRemixSection(db);
 
@@ -662,11 +670,14 @@ app.get("/api/sketches", async (req, res) => {
         generation: req.query.generation ? Number(req.query.generation) : undefined,
         rating: req.query.rating || undefined
       });
-      return res.json(result);
+      return res.json({
+        ...result,
+        items: result.items.map(prepareSketchForClient)
+      });
     }
 
     const db = await loadDB();
-    res.json(db.sketches);
+    res.json(db.sketches.map(prepareSketchForClient));
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -705,7 +716,7 @@ app.get("/api/autopilot/status", (req, res) => {
     lastError: autopilot.lastError,
     awaitingHuman: autopilot.phase === "awaiting_human",
     currentGeneration: autopilot.currentGeneration,
-    currentBatch: autopilot.currentBatch,
+    currentBatch: autopilot.currentBatch?.map(prepareSketchForClient) ?? null,
     generationProgress: autopilot.generationProgress,
     intervalMs: AUTOPILOT_INTERVAL_MS
   });

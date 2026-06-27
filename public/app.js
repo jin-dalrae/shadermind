@@ -442,7 +442,7 @@ class ShaderMindUI {
   }
 
   clearRenderers() {
-    this.renderers.forEach(r => r.stop());
+    this.renderers.forEach(r => r.destroy());
     this.renderers.clear();
   }
 
