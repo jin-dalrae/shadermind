@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import fs from "fs";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { OpenAI } from "openai";
@@ -17,6 +16,7 @@ import {
   ratingValue,
   selectLearningExamples
 } from "./lib/learning.js";
+import { createStorage } from "./storage/index.js";
 
 dotenv.config();
 
@@ -40,15 +40,20 @@ const LEARNING_CONTEXT_CHARS = Number(process.env.LEARNING_CONTEXT_CHARS) || 900
 const SHADER_SIMILARITY_THRESHOLD = Number(process.env.SHADER_SIMILARITY_THRESHOLD) || 0.82;
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders(res, filePath) {
+    if (/\.(html?|js|css)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
+    }
+  }
+}));
 
 const doApiKey = process.env.DIGITAL_OCEAN_MODEL_ACCESS_KEY || process.env.OPENAI_API_KEY;
 const client = new OpenAI({
   baseURL: "https://inference.do-ai.run/v1",
   apiKey: doApiKey || "dummy-key",
 });
-
-const DB_PATH = path.join(__dirname, "database.json");
 
 const DEFAULT_DB = {
   totalSketches: 0,
@@ -107,30 +112,11 @@ function releaseHumanGate() {
   }
 }
 
-function loadDB() {
-  try {
-    if (fs.existsSync(DB_PATH)) {
-      const raw = fs.readFileSync(DB_PATH, "utf8");
-      const parsed = JSON.parse(raw);
-      return { ...JSON.parse(JSON.stringify(DEFAULT_DB)), ...parsed };
-    }
-  } catch (err) {
-    console.error("Error loading database, returning default:", err);
-  }
-  return JSON.parse(JSON.stringify(DEFAULT_DB));
-}
-
-function saveDB(data) {
-  try {
-    fs.writeFileSync(DB_PATH, JSON.stringify(data, null, 2), "utf8");
-  } catch (err) {
-    console.error("Error saving database:", err);
-  }
-}
-
-if (!fs.existsSync(DB_PATH)) {
-  saveDB(DEFAULT_DB);
-}
+const { loadDB, saveDB, initStorage } = createStorage({
+  rootDir: __dirname,
+  defaultDb: DEFAULT_DB
+});
+initStorage();
 
 function decodeGlslField(value) {
   if (typeof value !== "string") return value;
