@@ -8,12 +8,37 @@ This document explains **what the LEARNING branch adds**, **how learning works e
 
 ---
 
+## Pick up here (session state)
+
+**Branch:** `LEARNING` on `origin/LEARNING` (collaborator push access works as of 2026-06-27)
+
+**Archive state** (in committed `database.json`):
+- `generationCount: 4`, `totalSketches: 40`
+- `preferenceMemory` active — rules built from prior rated batches
+- Next autopilot cycle would be **generation 5**
+
+**You are continuing work that:**
+1. Replaced Good/Bad with **1–5 ratings** (all 10 required)
+2. Added **code-aware learning** in `lib/learning/`
+3. Added **SQLite + JSON mirror** in `storage/`
+4. Fixed **Chrome WebGL context exhaustion** via shared grid renderer
+5. Documented everything in this file + [AGENTS.md](./AGENTS.md)
+
+**Immediate next steps** (if no other direction from user):
+- Open PR: `LEARNING` → `main`
+- Rate gen 4 batch / run gen 5 to validate learning loop end-to-end
+- Expand tests or implement snippet memory per [work/learning-feature.md](./work/learning-feature.md)
+
+**Run tests:** `npm test` (covers retrieval, memory, similarity, features in `test/learning.test.js`)
+
+---
+
 ## What LEARNING adds (vs `main`)
 
 | Area | `main` | `LEARNING` |
 |------|--------|------------|
 | Human feedback | Good / Bad | **1–5 rating** (required for every shader in a batch) |
-| Example memory | Last 3 `"good"` shaders, full GLSL dump | **Ranked retrieval** of 4–5 rated examples with context budget |
+| Example memory | Last 3 `"good"` shaders, full GLSL dump | **Ranked retrieval** (2 per evolutionary, 1 per directive, 0 for mutation) |
 | Rule memory | Heuristics + strategy genome only | **`preferenceMemory`** — evidence-backed prefer/avoid rules |
 | Code signals | None | **`codeFeatures`**, compile results, per-sketch critique |
 | Similarity guard | None | **Jaccard shingle check** + optional Gemini retry if too similar |
@@ -348,7 +373,7 @@ Disables retrieval, similarity retry, and preference injection. Strategy/heurist
 - Archive batch display when autopilot idle
 
 ### ⏳ Planned (see [`work/learning-feature.md`](./work/learning-feature.md))
-- Deterministic unit tests for retrieval/similarity
+- More unit tests beyond `test/learning.test.js` (integration / smoke)
 - Snippet-level memory (not just full-shader references)
 - Shadow-mode retrieval diagnostics UI
 - `LEARNING_MODE` = human | autonomous | hybrid
@@ -379,7 +404,7 @@ for s in json.load(sys.stdin):
 CODE_AWARE_LEARNING=false
 ```
 
-**Chrome render issues:** use `http://localhost:8080/?v=5`, incognito, or see render plan in [AGENTS.md](./AGENTS.md).
+**Chrome render issues:** shared single-context renderer in `public/shared-grid-renderer.js`. Use `http://localhost:8080/?v=5`, incognito, or confirm hardware acceleration. If still broken, see Option B (img blob per cell) in [work/learning-feature.md](./work/learning-feature.md) or [AGENTS.md](./AGENTS.md#operational-gotchas).
 
 ---
 

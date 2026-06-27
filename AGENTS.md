@@ -6,9 +6,58 @@ Guide for AI agents and contributors working on this repository.
 
 ---
 
+## Agent handoff — start here
+
+**Active branch:** `LEARNING` (pushed to `origin/LEARNING`; open PR into `main` when ready)
+
+**Read order for a new agent:**
+1. This file — repo map, API, env, conventions
+2. [agents-learning-model.md](./agents-learning-model.md) — how learning works on LEARNING
+3. [work/learning-feature.md](./work/learning-feature.md) — full spec + remaining rollout items
+4. `server.js` → `generateGlslForSketch()`, `/api/feedback`
+5. `lib/learning/` + `test/learning.test.js`
+
+**Current data snapshot** (committed `database.json`):
+- **4 generations**, **40 sketches** archived
+- `preferenceMemory` populated after rated batches
+- Sketch IDs: `sketch-gen{N}-{1-10}`
+
+**What we finished on LEARNING:**
+- Code-aware learning (`lib/learning/`) — retrieval, `preferenceMemory`, similarity guard
+- 1–5 human curation (all 10 shaders required before submit)
+- Compile evidence + per-sketch critique after feedback
+- SQLite + JSON mirror (`storage/`, `USE_SQLITE=true` in `.env.example`)
+- Chrome-safe shared grid renderer (`public/shared-grid-renderer.js`, cache bust `?v=5`)
+- Archive batch fallback when autopilot idle (`public/app.js`)
+- Agent docs: this file + `agents-learning-model.md`
+
+**Known open issues / next work:**
+| Priority | Item | Where |
+|----------|------|-------|
+| High | Open PR: merge `LEARNING` → `main` | GitHub |
+| Medium | Chrome black boxes — fix may need verification on user's machine; try `/?v=5`, incognito, HW acceleration | `shared-grid-renderer.js` |
+| Medium | Snippet-level memory (not just full-shader examples) | `work/learning-feature.md` §8 |
+| Medium | `LEARNING_MODE` human \| autonomous \| hybrid | `work/implementation.md` |
+| Medium | Expand test coverage beyond `test/learning.test.js` | `npm test` |
+| Low | MongoDB storage abstraction | `work/implementation.md` |
+| Low | Paginated `/api/sketches` | planned |
+
+**Quick start:**
+```bash
+git checkout LEARNING && git pull
+cp .env.example .env   # set GEMINI_API_KEY=...
+npm install && npm run dev
+# → http://localhost:8080/?v=5
+npm test               # learning unit tests
+```
+
+**Do not** run `cp .env.example .env` if `.env` already has a key — it wipes the key. Restart server after any `.env` edit.
+
+---
+
 ## What this project is
 
-**ShaderMind** is a hackathon prototype (2026 AI Engineer World's Fair) that generates **WebGL GLSL fragment shaders** using **Google Gemini**, learns aesthetic taste through **human good/bad curation**, and rewrites its own **strategy genome** and **heuristics** after each batch.
+**ShaderMind** is a hackathon prototype (2026 AI Engineer World's Fair) that generates **WebGL GLSL fragment shaders** using **Google Gemini**, learns aesthetic taste through **human 1–5 curation** (LEARNING branch; `main` still uses Good/Bad), and rewrites its own **strategy genome**, **heuristics**, and **`preferenceMemory`** after each batch.
 
 - **Theme:** Continual Learning (PLUS-inspired preference summaries)
 - **Stack:** Node.js + Express backend, vanilla HTML/CSS/JS frontend, WebGL 1.0 renderer
@@ -34,13 +83,15 @@ shadermind/
 │   ├── shared-grid-renderer.js  # Chrome-safe shared WebGL grid (LEARNING)
 │   ├── shader-renderer.js # WebGL for dialog/full view
 ├── project_blueprint/     # PRD, pitch, hackathon criteria (design docs)
-├── work/implementation.md # Planned MongoDB + tiered memory (NOT built yet)
+├── work/
+│   ├── learning-feature.md  # Code-aware learning spec (mostly implemented)
+│   └── implementation.md    # Planned MongoDB + tiered memory (NOT built yet)
 ├── .env.example           # Env template (may drift from user .env)
 ├── Dockerfile             # Copies database.json as seed data
 └── .do/app.yaml           # DigitalOcean App Platform template
 ```
 
-There is **no** `README.md`, **no** tests, **no** build step, **no** frontend bundler.
+There is **no** `README.md`. Tests: `test/learning.test.js` (`npm test`). No build step, no frontend bundler.
 
 ---
 
@@ -185,14 +236,17 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 
 ---
 
-## Audit findings (as of 2026-06-27)
+## Audit findings (as of 2026-06-27, LEARNING branch)
 
 ### Working
 
 - Gemini two-phase batch generation with retries and concurrency pool
-- Human-in-the-loop curation UI and feedback → strategy evolution
-- WebGL live rendering with error boundaries
+- Human-in-the-loop **1–5** curation UI and feedback → strategy + `preferenceMemory` evolution
+- Code-aware example retrieval, compile evidence, similarity guard (`lib/learning/`)
+- WebGL live rendering — shared grid context + dialog renderer with error boundaries
+- SQLite persistence with JSON mirror (`storage/`)
 - Autopilot state machine (`idle` → `generating` → `awaiting_human` → `evolving` → `waiting`)
+- Learning unit tests (`npm test`)
 - Docker + DO App Platform configs present
 - `.env` gitignored
 
@@ -200,24 +254,28 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 
 | Issue | Severity | Detail |
 |-------|----------|--------|
+| LEARNING not merged to `main` | Medium | Work lives on `origin/LEARNING`; `main` lacks learning + storage + render fixes |
 | MongoDB in `.env` but not in code | Medium | `work/implementation.md` is a plan only |
 | `autoCurateBatch` unused | Medium | PRD mentions autonomous mode; loop is human-only |
 | `buildGenerationPrompts` dead code | Low | ~50 lines; safe to delete when refactoring |
 | `.env.example` vs code defaults | Low | GLSL model default differs from example |
 | User `.env` var names | Medium | `ALLOW_GEMINI_FALLBACK` has no effect |
-| No `README.md` | Low | Onboarding relies on AGENTS.md / blueprint |
-| No tests | Medium | Manual verification only |
+| No `README.md` | Low | Onboarding relies on AGENTS.md + agents-learning-model.md |
 | `database.json` in git | Medium | Grows with every generation; bloats repo |
 | Full sketch load on client | Medium | `/api/sketches` returns entire archive |
+| Chrome grid render | Medium | Shared renderer fix landed; verify on Chrome with `/?v=5` |
 | No auth / rate limits | Low | Acceptable for hackathon demo |
 | DO app.yaml repo placeholder | Low | `your-org/shadermind` needs updating |
 
 ### Operational gotchas
 
 1. **Server started before `.env` exists** → permanent "GEMINI_API_KEY required" until restart.
-2. **Port 8080 in use** → kill old process before restart.
-3. **GLSL sometimes stored with markdown fences** — `decodeGlslField()` and `sanitizeGlslSource()` handle this.
-4. **Generation takes 1–3 minutes** — 10 sequential-ish Gemini calls; UI shows `generationProgress`.
+2. **Port 8080 in use** → `lsof -ti :8080 | xargs kill -9` then restart.
+3. **`cp .env.example .env` overwrites existing key** — edit `.env` in place instead.
+4. **GLSL sometimes stored with markdown fences** — `decodeGlslField()` and `sanitizeGlslSource()` handle this.
+5. **Generation takes 1–3 minutes** — 10 Gemini calls; UI shows `generationProgress`.
+6. **Chrome may show black shader cells** — use `http://localhost:8080/?v=5`; grid uses one shared WebGL context via `shared-grid-renderer.js`.
+7. **Empty studio when idle** — app falls back to latest saved batch from DB; label shows `Gen N · saved batch`.
 
 ---
 
@@ -225,10 +283,12 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 
 ### Do
 
-- Keep backend changes in `server.js` unless implementing the planned `storage/` module from `work/implementation.md`.
+- On LEARNING work: read [agents-learning-model.md](./agents-learning-model.md) first.
+- Use `storage/` for persistence changes — already implemented (`json.js`, `sqlite.js`, `index.js`).
 - Match existing style: ES modules, no TypeScript, minimal dependencies.
 - Preserve GLSL ES 1.0 constraints in all generation prompts (`gl_FragColor`, not `out vec4`).
 - Use `runGeminiWithRetry` / `runGeminiBatch` for new Gemini calls.
+- Run `npm test` after changing `lib/learning/`.
 - Test locally: `npm install && npm run dev`, then check `/api/autopilot/status`.
 - Restart server after env changes.
 
@@ -244,10 +304,11 @@ Sketch IDs: `sketch-gen{N}-{1-10}`.
 ### Safe refactor targets
 
 - Extract Gemini client → `lib/gemini.js`
-- Extract storage → `storage/json.js` (then `storage/mongo.js`)
+- Add `storage/mongo.js` when implementing MongoDB (follow `storage/index.js` pattern)
 - Delete `buildGenerationPrompts()` once confirmed unused
 - Wire `autoCurateBatch()` behind `LEARNING_MODE=autonomous`
 - Add `README.md` pointing here
+- Merge `LEARNING` → `main` via PR
 
 ---
 
@@ -294,7 +355,7 @@ Do not mark these as done in docs until implemented in code.
 
 | Criterion | Status |
 |-----------|--------|
-| Continual learning via memory + feedback | ✅ Heuristics + strategy genome evolve per generation |
+| Continual learning via memory + feedback | ✅ Heuristics + strategy + `preferenceMemory` evolve per generation (LEARNING) |
 | Gemini special prize | ✅ All batch steps use Gemini REST API |
 | DigitalOcean deploy | ✅ Dockerfile + app.yaml |
 | Not a simple wrapper | ✅ Stateful WebGL playground with evolving prompts |
