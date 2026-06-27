@@ -2,6 +2,8 @@
 
 Guide for AI agents and contributors working on this repository.
 
+**Branch-specific learning guide:** [agents-learning-model.md](./agents-learning-model.md) — read this on the `LEARNING` branch for code-aware memory, 1–5 ratings, and retrieval.
+
 ---
 
 ## What this project is
@@ -10,7 +12,7 @@ Guide for AI agents and contributors working on this repository.
 
 - **Theme:** Continual Learning (PLUS-inspired preference summaries)
 - **Stack:** Node.js + Express backend, vanilla HTML/CSS/JS frontend, WebGL 1.0 renderer
-- **Persistence:** Flat `database.json` (MongoDB planned but **not implemented**)
+- **Persistence:** `storage/` — SQLite (`shadermind.db`) with `database.json` mirror, or JSON-only fallback
 - **North star:** 3,650 sketches (Lieberman metaphor — not a calendar)
 
 ---
@@ -19,13 +21,18 @@ Guide for AI agents and contributors working on this repository.
 
 ```
 shadermind/
-├── server.js              # Entire backend: API, Gemini calls, autopilot, persistence
-├── database.json          # All agent memory + sketch archive (committed, ~100KB+)
+├── server.js              # Backend: API, Gemini, autopilot, learning integration
+├── storage/               # SQLite + JSON persistence (LEARNING branch)
+├── lib/
+│   └── learning/          # Pure learning helpers (retrieval, memory, similarity)
+├── database.json          # Sketch archive + agent memory (JSON mirror)
+├── agents-learning-model.md  # LEARNING branch guide — how learning works
 ├── public/
 │   ├── index.html         # Single-page UI shell
 │   ├── index.css          # Editorial gallery styling
-│   ├── app.js             # ShaderMindUI — polling, curation, timeline
-│   └── shader-renderer.js # WebGL compile/render (u_time, u_resolution, u_mouse)
+│   ├── app.js             # ShaderMindUI — 1–5 curation, polling, timeline
+│   ├── shared-grid-renderer.js  # Chrome-safe shared WebGL grid (LEARNING)
+│   ├── shader-renderer.js # WebGL for dialog/full view
 ├── project_blueprint/     # PRD, pitch, hackathon criteria (design docs)
 ├── work/implementation.md # Planned MongoDB + tiered memory (NOT built yet)
 ├── .env.example           # Env template (may drift from user .env)
@@ -44,7 +51,8 @@ Browser (public/app.js)
     │ poll every 3s
     ▼
 Express (server.js)
-    ├── loadDB() / saveDB()  →  database.json
+    ├── createStorage()     →  SQLite and/or database.json
+    ├── lib/learning/       →  retrieval, preferenceMemory, similarity
     ├── Gemini REST API     →  generativelanguage.googleapis.com
     └── Autopilot loop      →  generate → await human → evolve → repeat
 ```
@@ -54,8 +62,10 @@ Express (server.js)
 1. **Autopilot** starts on boot if `AUTOPILOT !== "false"` and `GEMINI_API_KEY` is set.
 2. **Generate** 10 shaders (5 evolutionary / 3 directive / 2 mutation).
 3. **Pause** at phase `awaiting_human` until `POST /api/feedback`.
-4. **Evolve** strategy + heuristics via Gemini; persist to `database.json`.
+4. **Evolve** strategy + heuristics + `preferenceMemory` via Gemini; persist.
 5. **Wait** `AUTOPILOT_INTERVAL_MS` (default 45s), then repeat.
+
+On **`LEARNING` branch:** human rates every shader **1–5** (not Good/Bad). See [agents-learning-model.md](./agents-learning-model.md).
 
 `autoCurateBatch()` exists for autonomous curation but is **not wired** into the autopilot loop. See `work/implementation.md` for planned `LEARNING_MODE` flag.
 
@@ -78,10 +88,11 @@ Express (server.js)
 - Polls `/api/state`, `/api/autopilot/status`, `/api/sketches` every **3 seconds**.
 - Renders current batch in `#shaderGrid` when `autopilot.currentBatch` is set.
 - Shows curation panel only when `phase === "awaiting_human"`.
-- Unrated shaders default to **bad** on submit.
+- **LEARNING:** requires **1–5 rating on every shader** before submit.
+- Falls back to **latest saved batch from DB** when autopilot is idle (no live batch).
 - Opens fullscreen `<dialog>` with live canvas + GLSL source on cell click.
 
-`ShaderRenderer` (`public/shader-renderer.js`):
+Grid uses [`shared-grid-renderer.js`](./public/shared-grid-renderer.js) (one WebGL context). Dialog uses [`shader-renderer.js`](./public/shader-renderer.js):
 
 - WebGL 1.0 only. Requires `precision mediump float;` and `gl_FragColor`.
 - Injects uniforms: `u_time`, `u_resolution`, `u_mouse` (eased).
@@ -101,7 +112,8 @@ Express (server.js)
 | POST | `/api/autopilot/stop` | Stop after current cycle |
 | POST | `/api/autopilot/kick` | Unstick + restart if idle |
 | POST | `/api/generate` | Manual batch (`{ focus: string }`) |
-| POST | `/api/feedback` | Ratings + optional opinion → evolve + release autopilot gate |
+| POST | `/api/feedback` | Ratings 1–5 + optional opinion → evolve + release autopilot gate |
+| POST | `/api/sketches/:id/compile-result` | Client compile success/failure during curation (LEARNING) |
 | GET | `/api/narrative` | Gemini monologue over lifetime stats |
 | POST | `/api/reset-baseline` | Reset strategy/heuristics; **keeps** sketch history |
 
@@ -127,6 +139,14 @@ Static files served from `public/` at `/`.
 | `AUTOPILOT_SEED_CYCLES` | `3` | Logged only; loop runs indefinitely |
 | `GEMINI_TIMEOUT_MS` | `90000` | Per-request timeout |
 | `GLSL_CONCURRENCY` | `3` | Parallel GLSL generation workers |
+| `CODE_AWARE_LEARNING` | `true` | Enable example retrieval + similarity guard (LEARNING) |
+| `LEARNING_CONTEXT_CHARS` | `9000` | Max chars of example GLSL per shader |
+| `SHADER_SIMILARITY_THRESHOLD` | `0.82` | Near-copy retry threshold |
+| `USE_SQLITE` | — | Enable SQLite storage |
+| `SQLITE_PATH` | `./shadermind.db` | SQLite file path |
+| `JSON_MIRROR` | `true` | Sync `database.json` when using SQLite |
+
+Full learning env docs: [agents-learning-model.md](./agents-learning-model.md#environment-variables-learning-specific).
 
 **In user `.env` but NOT used by code:**
 
@@ -147,8 +167,11 @@ Singleton file merged with `DEFAULT_DB` on load:
   totalSketches, generationCount, successRate,
   currentStrategy,           // long "genome" string injected into Gemini prompts
   heuristics[],              // short rules with approval-rate estimates
+  preferenceMemory: {        // LEARNING — evidence-backed prefer/avoid rules
+    version, updatedAtGeneration, prefer[], avoid[]
+  },
   strategyTimeline[],        // { generation, timestamp, strategy, notes }
-  sketches[],                // { id, title, type, hypothesis, glsl, poetic_statement, dna[], generation, rated, rating }
+  sketches[],                // see agents-learning-model.md for full sketch schema
   statistics: {
     generations[],           // per-gen good/bad counts
     popularTags[]            // from good-rated DNA tags
@@ -158,7 +181,7 @@ Singleton file merged with `DEFAULT_DB` on load:
 
 Sketch IDs: `sketch-gen{N}-{1-10}`.
 
-**Remix context:** Last 3 `rating === "good"` sketches' full GLSL is injected into generation prompts via `buildRemixSection()`.
+**Remix (legacy):** `buildRemixSection()` still exists but LEARNING uses `selectLearningExamples()` instead. See [agents-learning-model.md](./agents-learning-model.md).
 
 ---
 
@@ -282,8 +305,11 @@ Do not mark these as done in docs until implemented in code.
 
 ## Key files to read first
 
-1. `server.js` — lines 466–507 (`generateBatchInternal`), 688–708 (`runAutopilotCycle`), 844–888 (`/api/feedback`)
-2. `public/app.js` — `poll()`, `submitFeedback()`, `buildGrid()`
-3. `public/shader-renderer.js` — `compile()`, `render()`
-4. `work/implementation.md` — roadmap for next features
-5. `project_blueprint/prd.md` — product intent (some sections describe planned autonomous mode)
+1. [agents-learning-model.md](./agents-learning-model.md) — **LEARNING branch:** memory model, ratings, retrieval, API
+2. `server.js` — `generateGlslForSketch()`, `recordRatingsAndPersist()`, `/api/feedback`
+3. `lib/learning/` — retrieval, memory, features, similarity
+4. `public/app.js` — 1–5 curation, `submitFeedback()`, archive batch fallback
+5. `public/shared-grid-renderer.js` — Chrome-safe grid rendering
+6. `storage/` — SQLite + JSON persistence
+7. `work/learning-feature.md` — spec + planned follow-ups
+8. `project_blueprint/prd.md` — product intent
