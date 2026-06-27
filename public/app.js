@@ -1,18 +1,19 @@
-import { ShaderRenderer } from "./shader-renderer.js";
+import { ShaderRenderer } from "./shader-renderer.js?v=8";
 
 const PHASE_LABELS = {
   idle: "ready",
   generating: "generating batch…",
   planning: "planning batch…",
   awaiting_human: "awaiting your curation",
-  evolving: "evolving from your feedback…",
-  waiting: "preparing next batch…",
+  evolving: "updating strategy…",
+  waiting: "generating next batch…",
   error: "error · retrying"
 };
 
 class ShaderMindUI {
   constructor() {
     this.renderers = new Map();
+    this.timelineRenderers = [];
     this.dialogRenderer = null;
     this.displayedGeneration = null;
     this.displayedBatchKey = null;
@@ -20,6 +21,12 @@ class ShaderMindUI {
     this.sketches = [];
     this.activeBatch = null;
     this.userRatings = {};
+    this.thumbBackfillQueue = [];
+    this.thumbBackfillBusy = false;
+    this.thumbBackfillSeen = new Set();
+    this.timelineKey = null;
+    this.pollTimer = null;
+    this.pollIntervalMs = 3000;
 
     this.els = {
       statGen: document.getElementById("statGen"),
@@ -30,6 +37,7 @@ class ShaderMindUI {
       studioStatus: document.getElementById("studioStatus"),
       statusMessage: document.getElementById("statusMessage"),
       batchLabel: document.getElementById("batchLabel"),
+      btnGenerateNext: document.getElementById("btnGenerateNext"),
       shaderGrid: document.getElementById("shaderGrid"),
       emptyState: document.getElementById("emptyState"),
       curationPanel: document.getElementById("curationPanel"),
@@ -48,6 +56,8 @@ class ShaderMindUI {
       dialogClose: document.getElementById("dialogClose"),
       dialogCanvas: document.getElementById("dialogCanvas"),
       dialogError: document.getElementById("dialogError"),
+      dialogLoading: document.getElementById("dialogLoading"),
+      dialogHint: document.getElementById("dialogHint"),
       dialogEyebrow: document.getElementById("dialogEyebrow"),
       dialogTitle: document.getElementById("dialogTitle"),
       dialogHypothesis: document.getElementById("dialogHypothesis"),
@@ -62,9 +72,33 @@ class ShaderMindUI {
     });
     this.els.btnMonologue.addEventListener("click", () => this.fetchMonologue());
     this.els.btnSubmitFeedback.addEventListener("click", () => this.submitFeedback());
+    this.els.btnGenerateNext.addEventListener("click", () => this.generateNextBatch());
 
     this.poll();
-    setInterval(() => this.poll(), 3000);
+    this.schedulePoll();
+  }
+
+  schedulePoll() {
+    if (this.pollTimer) window.clearInterval(this.pollTimer);
+    this.pollTimer = window.setInterval(() => this.poll(), this.pollIntervalMs);
+  }
+
+  setPollInterval(ms) {
+    if (this.pollIntervalMs === ms) return;
+    this.pollIntervalMs = ms;
+    this.schedulePoll();
+  }
+
+  timelineFingerprint(state) {
+    const good = this.sketches.filter(s => s.rating === "good");
+    const withThumb = good.filter(s => s.thumbnail).length;
+    return `${state.generationCount}:${(state.strategyTimeline || []).length}:${good.length}:${withThumb}`;
+  }
+
+  seedThumbnailBackfill() {
+    this.sketches
+      .filter(s => s.rating === "good" && !s.thumbnail)
+      .forEach(s => this.queueThumbnailBackfill(s));
   }
 
   async poll() {
@@ -81,14 +115,24 @@ class ShaderMindUI {
       this.sketches = Array.isArray(sketchData) ? sketchData : (sketchData.items || []);
 
       this.updateHeader(state, autopilot);
-      this.updateStudio(autopilot);
+      this.updateStudio(autopilot, state);
       this.updateReflection(state);
       this.updateMind(state);
 
-      if (state.generationCount !== this.lastGen) {
-        this.lastGen = state.generationCount;
+      const fp = this.timelineFingerprint(state);
+      if (fp !== this.timelineKey) {
+        this.timelineKey = fp;
         this.updateTimeline(state);
       }
+
+      if (state.generationCount !== this.lastGen) {
+        this.lastGen = state.generationCount;
+      }
+
+      this.seedThumbnailBackfill();
+
+      const busy = ["generating", "waiting"].includes(autopilot.phase);
+      this.setPollInterval(busy ? 1200 : 3000);
     } catch (err) {
       console.error(err);
       this.els.pillText.textContent = "connection lost";
@@ -118,11 +162,21 @@ class ShaderMindUI {
     }
   }
 
-  updateStudio(autopilot) {
+  updateStudio(autopilot, state = {}) {
     const busy = ["generating", "evolving"].includes(autopilot.phase);
     const awaiting = autopilot.phase === "awaiting_human" || autopilot.awaitingHuman;
+    const canManualGenerate = !awaiting && autopilot.phase !== "generating"
+      && (autopilot.phase === "error" || (!autopilot.running && autopilot.phase !== "waiting"));
 
-    this.els.studioStatus.hidden = !busy || awaiting;
+    if (this.els.btnGenerateNext) {
+      this.els.btnGenerateNext.hidden = !canManualGenerate;
+      this.els.btnGenerateNext.disabled = busy;
+      this.els.btnGenerateNext.title = autopilot.phase === "error"
+        ? "Retry generation after an error"
+        : "Start the next batch now";
+    }
+
+    this.els.studioStatus.hidden = !busy;
     if (busy && !awaiting) {
       const progress = autopilot.generationProgress
         ? ` · ${autopilot.generationProgress}`
@@ -145,7 +199,12 @@ class ShaderMindUI {
         this.els.curationPanel.hidden = true;
       } else if (!busy) {
         this.els.emptyState.hidden = false;
-        this.els.emptyState.querySelector("p").textContent = "Waiting for the first batch.";
+        const msg = autopilot.phase === "error"
+          ? `Generation error — ${autopilot.lastError || "retry with Generate next batch"}`
+          : autopilot.phase === "waiting"
+            ? "Next batch generating…"
+            : "Waiting for the first batch.";
+        this.els.emptyState.querySelector("p").textContent = msg;
         this.els.curationPanel.hidden = true;
       }
       return;
@@ -169,6 +228,8 @@ class ShaderMindUI {
       this.activeBatch = batch;
       this.userRatings = {};
       this.buildGrid(batch, awaiting);
+    } else {
+      this.retryFailedRenderers(batch);
     }
 
     this.updateSubmitState();
@@ -178,7 +239,7 @@ class ShaderMindUI {
     this.clearRenderers();
     this.els.shaderGrid.innerHTML = "";
 
-    batch.forEach(sketch => {
+    batch.forEach((sketch, index) => {
       const cell = document.createElement("article");
       cell.className = "shader-cell";
       cell.dataset.id = sketch.id;
@@ -248,12 +309,34 @@ class ShaderMindUI {
 
       const renderer = new ShaderRenderer(canvas);
       this.renderers.set(sketch.id, renderer);
-      renderer.compileWhenReady(sketch.glsl);
+      window.setTimeout(() => {
+        renderer.compileWhenReady(sketch.glsl);
+      }, index * 120);
+    });
+  }
+
+  retryFailedRenderers(batch) {
+    batch.forEach((sketch) => {
+      const renderer = this.renderers.get(sketch.id);
+      if (!renderer) return;
+      if (!renderer.isRunning() && (renderer.needsCompile() || renderer.error)) {
+        renderer.error = null;
+        renderer.compileWhenReady(sketch.glsl);
+      }
     });
   }
 
   rateSketch(sketchId, rating) {
     this.userRatings[sketchId] = rating;
+
+    if (rating === "good") {
+      window.setTimeout(() => {
+        const thumb = this.captureThumbnailForSketch(sketchId);
+        if (!thumb) return;
+        const sketch = this.activeBatch?.find(s => s.id === sketchId);
+        if (sketch) sketch.thumbnail = thumb;
+      }, 500);
+    }
 
     const cell = this.els.shaderGrid.querySelector(`[data-id="${sketchId}"]`);
     if (!cell) return;
@@ -278,6 +361,139 @@ class ShaderMindUI {
       : `${count} rated — unrated will count as Bad`;
   }
 
+  captureThumbnailForSketch(sketchId) {
+    const renderer = this.renderers.get(sketchId);
+    if (!renderer?.isRunning()) return null;
+    return renderer.captureThumbnail(64, 1.25, 0.55);
+  }
+
+  collectBatchThumbnails(batch, ratings) {
+    const thumbnails = {};
+    for (const sketch of batch) {
+      if (ratings[sketch.id] !== "good") continue;
+      const thumb = sketch.thumbnail || this.captureThumbnailForSketch(sketch.id);
+      if (thumb) {
+        thumbnails[sketch.id] = thumb;
+        sketch.thumbnail = thumb;
+      }
+    }
+    return thumbnails;
+  }
+
+  queueThumbnailBackfill(sketch) {
+    if (!sketch?.id || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) return;
+    if (this.thumbBackfillQueue.some(s => s.id === sketch.id)) return;
+    this.thumbBackfillQueue.push(sketch);
+    this.drainThumbnailBackfill();
+  }
+
+  async drainThumbnailBackfill() {
+    if (this.thumbBackfillBusy || !this.thumbBackfillQueue.length) return;
+    this.thumbBackfillBusy = true;
+
+    while (this.thumbBackfillQueue.length) {
+      const sketch = this.thumbBackfillQueue.shift();
+      if (!sketch || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) continue;
+      this.thumbBackfillSeen.add(sketch.id);
+
+      const thumb = await this.renderOffscreenThumbnail(sketch);
+      if (!thumb) continue;
+
+      sketch.thumbnail = thumb;
+      const local = this.sketches.find(s => s.id === sketch.id);
+      if (local) local.thumbnail = thumb;
+
+      try {
+        await fetch("/api/sketches/thumbnail", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ id: sketch.id, thumbnail: thumb })
+        });
+        this.refreshTimelineThumb(sketch.id, thumb);
+      } catch (err) {
+        console.warn("Thumbnail upload failed:", err.message);
+      }
+
+      await new Promise(r => window.setTimeout(r, 200));
+    }
+
+    this.thumbBackfillBusy = false;
+  }
+
+  async renderOffscreenThumbnail(sketch) {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    canvas.style.cssText = "position:fixed;left:-9999px;width:64px;height:64px;pointer-events:none;";
+    document.body.appendChild(canvas);
+
+    const renderer = new ShaderRenderer(canvas);
+    try {
+      const ok = await renderer.compile(sketch.glsl);
+      if (!ok) return null;
+      return renderer.captureThumbnail(64, 1.25, 0.55);
+    } finally {
+      renderer.destroy();
+      canvas.remove();
+    }
+  }
+
+  refreshTimelineThumb(sketchId, thumbnail) {
+    const btn = this.els.timelineList.querySelector(`[data-sketch-id="${sketchId}"]`);
+    if (!btn || btn.querySelector("img")) return;
+    btn.style.background = "";
+    const img = document.createElement("img");
+    img.src = thumbnail;
+    img.alt = "";
+    img.loading = "lazy";
+    btn.appendChild(img);
+  }
+
+  mountTimelineThumb(container, sketch) {
+    const thumb = document.createElement("button");
+    thumb.type = "button";
+    thumb.className = "timeline-thumb timeline-thumb-static";
+    thumb.dataset.sketchId = sketch.id;
+    thumb.title = sketch.title || "View sketch";
+
+    if (sketch.thumbnail) {
+      const img = document.createElement("img");
+      img.src = sketch.thumbnail;
+      img.alt = "";
+      img.loading = "lazy";
+      thumb.appendChild(img);
+    } else {
+      thumb.style.background = this.thumbGradient(sketch);
+      this.queueThumbnailBackfill(sketch);
+    }
+
+    thumb.addEventListener("click", () => this.openDialog(sketch));
+    container.appendChild(thumb);
+  }
+
+  async generateNextBatch() {
+    const focus = this.els.userOpinion.value.trim();
+    this.els.btnGenerateNext.disabled = true;
+    this.els.btnGenerateNext.textContent = "starting…";
+
+    try {
+      const res = await fetch("/api/autopilot/generate-next", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus: focus || undefined })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Generate failed");
+      if (focus) this.els.userOpinion.value = "";
+      await this.poll();
+    } catch (err) {
+      alert(`Generate error: ${err.message}`);
+    } finally {
+      this.els.btnGenerateNext.disabled = false;
+      this.els.btnGenerateNext.textContent = "Generate next batch";
+    }
+  }
+
   async submitFeedback() {
     if (!this.activeBatch?.length) return;
 
@@ -288,9 +504,10 @@ class ShaderMindUI {
       if (!ratings[s.id]) ratings[s.id] = "bad";
     });
 
+    const thumbnails = this.collectBatchThumbnails(this.activeBatch, ratings);
+
     this.els.btnSubmitFeedback.disabled = true;
-    this.els.btnSubmitFeedback.textContent = "Evolving…";
-    this.els.curationPanel.hidden = true;
+    this.els.btnSubmitFeedback.textContent = "Saving…";
 
     try {
       const res = await fetch("/api/feedback", {
@@ -299,6 +516,7 @@ class ShaderMindUI {
         body: JSON.stringify({
           generation: gen,
           ratings,
+          thumbnails,
           userOpinion: this.els.userOpinion.value.trim(),
           newSketches: this.activeBatch
         })
@@ -311,14 +529,18 @@ class ShaderMindUI {
       this.userRatings = {};
       this.displayedGeneration = null;
       this.displayedBatchKey = null;
-      this.els.reflectionText.textContent = result.analysis || "Strategy evolved.";
+      this.activeBatch = null;
+      this.els.curationPanel.hidden = true;
+      this.els.reflectionText.textContent = result.evolutionPending
+        ? `${result.goodCount} good · ${result.badCount} bad — next batch generating…`
+        : (result.analysis || "Ratings saved.");
       await this.poll();
     } catch (err) {
       alert(`Feedback error: ${err.message}`);
       this.els.curationPanel.hidden = false;
     } finally {
       this.els.btnSubmitFeedback.disabled = false;
-      this.els.btnSubmitFeedback.textContent = "Submit & evolve";
+      this.els.btnSubmitFeedback.textContent = "Submit & next batch";
     }
   }
 
@@ -375,18 +597,7 @@ class ShaderMindUI {
 
       if (good.length) {
         const container = li.querySelector(".timeline-sketches");
-        good.forEach(s => {
-          const thumb = document.createElement("div");
-          thumb.className = "timeline-thumb";
-          const canvas = document.createElement("canvas");
-          thumb.appendChild(canvas);
-          thumb.addEventListener("click", () => this.openDialog(s));
-          const renderer = new ShaderRenderer(canvas);
-          renderer.compileWhenReady(s.glsl);
-          thumb.addEventListener("mouseenter", () => renderer.start());
-          thumb.addEventListener("mouseleave", () => renderer.stop());
-          container.appendChild(thumb);
-        });
+        good.slice(0, 4).forEach(s => this.mountTimelineThumb(container, s));
       }
     });
   }
@@ -412,7 +623,7 @@ class ShaderMindUI {
 
   openDialog(sketch) {
     if (this.dialogRenderer) {
-      this.dialogRenderer.stop();
+      this.dialogRenderer.destroy();
       this.dialogRenderer = null;
     }
 
@@ -425,25 +636,50 @@ class ShaderMindUI {
     this.els.dialogTags.innerHTML = dna.map(t => `<span>#${this.esc(t)}</span>`).join("");
     this.els.dialogCode.textContent = sketch.glsl || "";
 
-    this.els.dialogError.classList.remove("active");
+    this.els.dialogError.hidden = true;
     this.els.dialogError.textContent = "";
+    this.els.dialogLoading.hidden = false;
+    this.els.dialogHint.hidden = true;
 
-    this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas);
     this.els.shaderDialog.showModal();
-    this.dialogRenderer.compileWhenReady(sketch.glsl);
+
+    const glsl = sketch.glsl || "";
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
+          errorEl: this.els.dialogError,
+          loadingEl: this.els.dialogLoading,
+          hintEl: this.els.dialogHint
+        });
+        this.dialogRenderer.compileWhenReady(glsl);
+      });
+    });
   }
 
   closeDialog() {
     this.els.shaderDialog.close();
     if (this.dialogRenderer) {
-      this.dialogRenderer.stop();
+      this.dialogRenderer.destroy();
       this.dialogRenderer = null;
     }
+  }
+
+  clearTimelineRenderers() {
+    this.timelineRenderers.forEach(r => r.destroy());
+    this.timelineRenderers = [];
+  }
+
+  thumbGradient(sketch) {
+    const seed = [...(sketch.id || "sketch")].reduce((n, c) => n + c.charCodeAt(0), 0);
+    const h1 = seed % 360;
+    const h2 = (h1 + 47) % 360;
+    return `linear-gradient(135deg, hsl(${h1}, 42%, 28%), hsl(${h2}, 55%, 52%))`;
   }
 
   clearRenderers() {
     this.renderers.forEach(r => r.destroy());
     this.renderers.clear();
+    this.clearTimelineRenderers();
   }
 
   esc(str) {

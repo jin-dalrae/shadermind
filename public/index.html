@@ -34,6 +34,7 @@
           <p class="gallery-sub" id="studioDesc">Current batch · click to expand</p>
         </div>
         <div class="gallery-bar-right">
+          <button type="button" class="btn-generate" id="btnGenerateNext" hidden>Generate next batch</button>
           <span class="batch-label" id="batchLabel">—</span>
           <div class="studio-status" id="studioStatus" hidden>
             <span class="status-dot"></span>
@@ -51,12 +52,12 @@
       <div class="curation-panel" id="curationPanel" hidden>
         <div class="curation-head">
           <h3>Your curation</h3>
-          <p>Rate each shader, add an aesthetic note, then submit to evolve the agent.</p>
+          <p>Rate each shader Good or Bad, add an optional note, then submit — the next batch generates immediately.</p>
         </div>
         <textarea id="userOpinion" placeholder="e.g. Slower motion, warmer ambers, less grid noise, more liquid flow…"></textarea>
         <div class="curation-actions">
           <span class="curation-hint" id="curationHint">Rate at least one shader</span>
-          <button type="button" class="btn-submit" id="btnSubmitFeedback" disabled>Submit &amp; evolve</button>
+          <button type="button" class="btn-submit" id="btnSubmitFeedback" disabled>Submit &amp; next batch</button>
         </div>
       </div>
     </section>
@@ -109,25 +110,28 @@
   <dialog class="shader-dialog" id="shaderDialog">
     <button type="button" class="dialog-close" id="dialogClose" aria-label="Close">×</button>
     <div class="dialog-layout">
-      <div class="dialog-canvas-wrap">
-        <canvas id="dialogCanvas"></canvas>
-        <p class="dialog-hint">move pointer to interact</p>
-        <div class="shader-error" id="dialogError"></div>
-      </div>
-      <div class="dialog-meta">
+      <section class="dialog-preview">
+        <div class="dialog-canvas-wrap">
+          <canvas id="dialogCanvas"></canvas>
+          <p class="dialog-hint" id="dialogHint">move pointer to interact</p>
+          <p class="dialog-loading" id="dialogLoading">compiling shader…</p>
+        </div>
+        <p class="dialog-compile-error" id="dialogError" hidden></p>
+      </section>
+      <section class="dialog-meta">
         <p class="dialog-eyebrow" id="dialogEyebrow"></p>
         <h3 id="dialogTitle"></h3>
         <p class="dialog-hypothesis" id="dialogHypothesis"></p>
         <p class="dialog-statement" id="dialogStatement"></p>
         <div class="dialog-tags" id="dialogTags"></div>
-        <details>
+        <details class="dialog-source-details">
           <summary>GLSL source</summary>
           <pre class="dialog-code"><code id="dialogCode"></code></pre>
         </details>
-      </div>
+      </section>
     </div>
   </dialog>
 
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=8"></script>
 </body>
 </html>

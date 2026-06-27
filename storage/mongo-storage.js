@@ -66,6 +66,7 @@ export class MongoStorage {
         rated: s.rated,
         rating: s.rating,
         dna: s.dna,
+        thumbnail: s.thumbnail || null,
         curatorSource: s.curatorSource
       })),
       statistics: agent.statistics ?? { generations: [], popularTags: [] },
@@ -76,7 +77,9 @@ export class MongoStorage {
         heuristics: r.heuristics,
         keyLearnings: r.keyLearnings,
         createdAt: r.createdAt
-      }))
+      })),
+      pendingBatch: agent.pendingBatch || null,
+      lastHumanOpinion: agent.lastHumanOpinion || null
     });
   }
 
@@ -95,6 +98,8 @@ export class MongoStorage {
           learningMode: data.learningMode,
           lastConsolidationGen: data.lastConsolidationGen,
           statistics: data.statistics,
+          pendingBatch: data.pendingBatch ?? null,
+          lastHumanOpinion: data.lastHumanOpinion ?? null,
           updatedAt: new Date()
         }
       },

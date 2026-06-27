@@ -171,6 +171,30 @@ section {
   margin-top: 6px;
 }
 
+.btn-generate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  padding: 8px 14px;
+  border: 1px solid var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+  cursor: pointer;
+  border-radius: 2px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.btn-generate:hover:not(:disabled) {
+  background: var(--accent);
+  color: #fff;
+}
+
+.btn-generate:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
 .gallery-bar-right {
   display: flex;
   align-items: center;
@@ -274,6 +298,7 @@ section {
   display: block;
   width: 100%;
   height: 100%;
+  background: #000;
 }
 
 .rating-badge {
@@ -504,16 +529,22 @@ section {
 }
 
 .strategy-details pre,
+.dialog-source-details {
+  margin-top: 8px;
+}
+
 .dialog-code {
-  margin-top: 12px;
-  padding: 16px;
-  background: var(--surface);
+  margin-top: 10px;
+  padding: 12px;
+  background: #f0ebe3;
   border: 1px solid var(--line);
+  border-radius: 4px;
   font-family: var(--font-mono);
-  font-size: 11px;
-  line-height: 1.5;
+  font-size: 10px;
+  line-height: 1.45;
   white-space: pre-wrap;
-  overflow-x: auto;
+  overflow: auto;
+  max-height: 220px;
 }
 
 /* Timeline */
@@ -575,14 +606,27 @@ section {
   border: 1px solid var(--line);
   cursor: pointer;
   overflow: hidden;
+  padding: 0;
 }
 
-.timeline-thumb canvas {
+.timeline-thumb-static {
+  border-radius: 2px;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.timeline-thumb-static:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.12);
+}
+
+.timeline-thumb canvas,
+.timeline-thumb img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   display: block;
+  object-fit: cover;
 }
 
 /* Mind */
@@ -658,70 +702,106 @@ section {
 
 /* Dialog */
 .shader-dialog {
+  position: relative;
   border: none;
   padding: 0;
-  max-width: min(1100px, 96vw);
+  max-width: min(920px, 94vw);
   width: 100%;
+  max-height: 92vh;
   background: var(--surface);
-  box-shadow: 0 24px 80px rgba(20, 18, 16, 0.18);
+  box-shadow: 0 24px 80px rgba(20, 18, 16, 0.22);
+  overflow: hidden;
 }
 
 .shader-dialog::backdrop {
-  background: rgba(20, 18, 16, 0.5);
+  background: rgba(20, 18, 16, 0.55);
 }
 
 .dialog-close {
   position: absolute;
-  top: 12px;
-  right: 16px;
+  top: 10px;
+  right: 12px;
   z-index: 10;
-  background: none;
-  border: none;
-  font-size: 28px;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  font-size: 22px;
   line-height: 1;
   color: var(--muted);
   cursor: pointer;
-  padding: 4px 8px;
+  padding: 4px 10px;
 }
 
 .dialog-close:hover { color: var(--ink); }
 
 .dialog-layout {
-  display: grid;
-  grid-template-columns: 1.2fr 1fr;
-  min-height: 480px;
+  display: flex;
+  flex-direction: column;
+  max-height: 92vh;
 }
 
-@media (max-width: 768px) {
-  .dialog-layout { grid-template-columns: 1fr; }
+.dialog-preview {
+  flex: 0 0 auto;
+  background: #0a0a0a;
+  border-bottom: 1px solid #222;
 }
 
 .dialog-canvas-wrap {
   position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  max-height: min(52vh, 480px);
   background: #0a0a0a;
-  min-height: 360px;
+  overflow: hidden;
 }
 
 .dialog-canvas-wrap canvas {
   width: 100%;
   height: 100%;
-  min-height: 360px;
   display: block;
+  background: #000;
 }
 
-.dialog-hint {
+.dialog-hint,
+.dialog-loading {
   position: absolute;
   bottom: 10px;
   left: 12px;
   font-family: var(--font-mono);
   font-size: 10px;
-  color: rgba(255,255,255,0.4);
+  color: rgba(255, 255, 255, 0.45);
+  margin: 0;
+}
+
+.dialog-loading {
+  bottom: auto;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+}
+
+.dialog-compile-error {
+  margin: 0;
+  padding: 10px 14px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.45;
+  color: #c66;
+  background: #1a0a0a;
+  border-top: 1px solid #3a2020;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 120px;
+  overflow-y: auto;
 }
 
 .dialog-meta {
-  padding: 32px 28px;
+  flex: 1 1 auto;
+  padding: 20px 24px 24px;
   overflow-y: auto;
-  max-height: 70vh;
+  min-height: 0;
 }
 
 .dialog-eyebrow {
@@ -744,8 +824,13 @@ section {
   font-size: 13px;
   color: var(--mut);
   font-style: italic;
-  margin-bottom: 16px;
+  margin-bottom: 12px;
   line-height: 1.45;
+  max-height: 4.5em;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .dialog-statement {

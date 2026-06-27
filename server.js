@@ -4,10 +4,11 @@ import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import { loadDB, saveDB, createStorage } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
-import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig } from "./lib/ai.js";
+import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig, getTaskModels } from "./lib/ai.js";
 import { parseJsonFromModel } from "./lib/json.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
-import { buildRemixSection, consolidateMemory } from "./lib/memory.js";
+import { assembleWorkingMemory, buildRemixSection, consolidateMemory } from "./lib/memory.js";
+import { MATH_COOKBOOK, MATH_COOKBOOK_COMPACT } from "./lib/math-cookbook.js";
 
 dotenv.config();
 
@@ -17,16 +18,29 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 8080;
 const AUTOPILOT_ENABLED = process.env.AUTOPILOT !== "false";
-const AUTOPILOT_INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_MS) || 45000;
+const AUTOPILOT_INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_MS ?? 0);
 const AUTOPILOT_SEED_CYCLES = Number(process.env.AUTOPILOT_SEED_CYCLES) || 3;
 
+const GENERATION_MODE = (process.env.GENERATION_MODE || "fast").toLowerCase();
+const EVOLUTION_ASYNC = process.env.EVOLUTION_ASYNC !== "false";
+
+const BATCH_SIZE = Number(process.env.BATCH_SIZE) || 3;
 const GLSL_CONCURRENCY = Number(process.env.GLSL_CONCURRENCY) || 3;
+const GLSL_MAX_ATTEMPTS = Number(process.env.GLSL_MAX_ATTEMPTS) || 2;
+const GLSL_MAX_TOKENS = Number(process.env.GLSL_MAX_TOKENS) || 5000;
+const REMIX_MUTATION = process.env.REMIX_MUTATION !== "false";
 const LEARNING_MODE = process.env.LEARNING_MODE || "human";
 const HYBRID_TIMEOUT_MS = Number(process.env.HYBRID_TIMEOUT_MS) || 300000;
 const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
 
 app.use(express.json({ limit: "50mb" }));
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(path.join(__dirname, "public"), {
+  setHeaders(res, filePath) {
+    if (filePath.endsWith(".js") || filePath.endsWith(".css")) {
+      res.setHeader("Cache-Control", "no-cache");
+    }
+  }
+}));
 
 const autopilot = {
   running: false,
@@ -59,6 +73,91 @@ function normalizeDna(dna) {
   if (Array.isArray(dna)) return dna.map(String).filter(Boolean);
   if (typeof dna === "string") return dna.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
   return ["experiment"];
+}
+
+function getBatchDistribution(size = BATCH_SIZE) {
+  const evolutionary = Math.max(1, Math.floor(size * 0.5));
+  const directive = Math.max(1, Math.floor(size * 0.3));
+  const mutation = Math.max(1, size - evolutionary - directive);
+  const total = evolutionary + directive + mutation;
+  return {
+    evolutionary,
+    directive,
+    mutation: mutation + (size - total)
+  };
+}
+
+function sketchTypeForIndex(index, size = BATCH_SIZE) {
+  const { evolutionary, directive } = getBatchDistribution(size);
+  if (index < evolutionary) return "evolutionary";
+  if (index < evolutionary + directive) return "directive";
+  return "mutation";
+}
+
+function pickRemixParent(db, index) {
+  const goods = db.sketches.filter(s => s.rating === "good");
+  if (!goods.length) return null;
+  return goods[index % goods.length];
+}
+
+async function savePendingStudio(db) {
+  if (autopilot.phase !== "awaiting_human" || !autopilot.currentBatch?.length) return;
+  db.pendingBatch = {
+    generation: autopilot.currentGeneration,
+    sketches: autopilot.currentBatch.map(s => ({
+      ...s,
+      glsl: decodeGlslField(s.glsl)
+    })),
+    savedAt: new Date().toISOString()
+  };
+  await saveDB(db);
+}
+
+async function clearPendingStudio(db) {
+  if (!db.pendingBatch) return;
+  delete db.pendingBatch;
+  await saveDB(db);
+}
+
+async function restorePendingStudio(db) {
+  const pending = db.pendingBatch;
+  if (!pending?.sketches?.length) return false;
+
+  autopilot.currentBatch = pending.sketches.map(s => ({
+    ...s,
+    glsl: decodeGlslField(s.glsl),
+    rated: false,
+    rating: null
+  }));
+  autopilot.currentGeneration = pending.generation;
+  autopilot.phase = "awaiting_human";
+  return true;
+}
+
+async function resumePendingAutopilotCycle() {
+  console.log(`[Autopilot] Gen #${autopilot.currentGeneration} restored — waiting for human curation`);
+  await waitForHumanOrTimeout();
+  autopilot.cyclesCompleted += 1;
+  autopilot.phase = "waiting";
+
+  while (autopilot.running) {
+    try {
+      await runAutopilotCycle();
+    } catch (err) {
+      autopilot.lastError = err.message;
+      autopilot.phase = "error";
+      console.error("[Autopilot] Cycle failed:", err.message);
+      await sleep(AUTOPILOT_INTERVAL_MS);
+      if (autopilot.running) autopilot.phase = "idle";
+    }
+    if (autopilot.running) {
+      autopilot.phase = "waiting";
+      await sleep(AUTOPILOT_INTERVAL_MS);
+    }
+  }
+
+  autopilot.running = false;
+  if (autopilot.phase !== "error") autopilot.phase = "idle";
 }
 
 function prepareSketchForClient(sketch) {
@@ -152,63 +251,191 @@ void main() {
 }`
 ];
 
+async function generateBatchFast(db, userFocus, genNum) {
+  const { evolutionary, directive, mutation } = getBatchDistribution();
+  const memory = assembleWorkingMemory(db, { userOpinion: userFocus });
+  const remixHint = memory.remixSeeds.length
+    ? `\nGood seeds to remix (evolutionary shaders: change ONE thing):\n${memory.remixSeeds.map((s, i) => `#${i + 1} "${s.title}" — ${(s.dna || []).join(", ")}`).join("\n")}`
+    : "";
+
+  const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
+Zach Lieberman: small daily mutations — change one thing, don't reinvent.
+
+Return a JSON array of exactly ${BATCH_SIZE} objects. Each object MUST have:
+- "title": short poetic title
+- "type": "evolutionary" | "directive" | "mutation"
+- "hypothesis": one-line visual/math idea
+- "dna": array of 3-5 math/visual tags
+- "glsl": full shader source as a JSON string (use \\n for newlines — NOT base64, NOT markdown fences)
+- "poetic_statement": one sentence
+
+Distribution: ${evolutionary} evolutionary, ${directive} directive, ${mutation} mutation.
+
+GLSL ES 1.0 rules (every shader must compile):
+- precision mediump float; at top
+- void main() { gl_FragColor = vec4(...); }
+- uniforms: u_time, u_resolution, u_mouse
+- No GLSL ES 3.0 (no out vec4, no .u/.v swizzles)
+- Under 55 lines each; float loops only, max 6 iterations
+${MATH_COOKBOOK_COMPACT}
+
+Strategy: ${(memory.currentStrategy || "").slice(0, 400)}
+Heuristics: ${memory.heuristics.slice(0, 3).join("; ")}
+${remixHint}
+${memory.rollupSummary ? `\nMemory: ${memory.rollupSummary.slice(0, 250)}` : ""}
+
+Output raw JSON array only.`;
+
+  const userPrompt = `Generation #${genNum}. Curator focus: "${userFocus}". Write ${BATCH_SIZE} distinctive, compile-ready shaders.`;
+
+  const fastModels = getTaskModels("glsl").slice(0, 1);
+  const rawResponse = await runInference(systemPrompt, userPrompt, {
+    task: "glsl",
+    jsonMode: true,
+    models: fastModels,
+    retriesPerModel: 1,
+    maxTokens: Math.min(GLSL_MAX_TOKENS * BATCH_SIZE, 14000),
+    label: `fast batch gen ${genNum}`
+  });
+
+  const parsed = parseJsonFromModel(rawResponse);
+  if (!Array.isArray(parsed) || parsed.length < 1) {
+    throw new Error(`Fast batch expected JSON array, got ${typeof parsed}`);
+  }
+
+  const items = parsed.slice(0, BATCH_SIZE);
+  while (items.length < BATCH_SIZE) {
+    items.push({
+      title: `Fallback Sketch ${items.length + 1}`,
+      type: sketchTypeForIndex(items.length),
+      hypothesis: "Safe fallback pattern.",
+      dna: ["fallback", "waves"],
+      glsl: FALLBACK_GLSL[items.length % FALLBACK_GLSL.length],
+      poetic_statement: "A safe fallback while the model recovers."
+    });
+  }
+
+  autopilot.generationProgress = `validating ${items.length} shaders`;
+
+  const glslResults = await runPool(
+    items.map((m, idx) => async () => {
+      let glsl = decodeGlslField(m.glsl || "");
+      let validation = validateGlsl(glsl);
+
+      if (!validation.valid) {
+        try {
+          glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+          validation = validateGlsl(glsl);
+        } catch (err) {
+          console.warn(`Fast batch #${idx + 1} repair failed:`, err.message);
+        }
+      }
+
+      if (!validation.valid) {
+        console.warn(`Fast batch #${idx + 1} invalid (${validation.reason}), using fallback`);
+        glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+      } else {
+        glsl = validation.code;
+      }
+
+      return { m, idx, glsl };
+    }),
+    GLSL_CONCURRENCY
+  );
+
+  return glslResults.map(({ m, idx, glsl }) => ({
+    id: `sketch-gen${genNum}-${idx + 1}`,
+    title: m.title || `Untitled Sketch #${idx + 1}`,
+    type: m.type || sketchTypeForIndex(idx),
+    hypothesis: m.hypothesis || "Aesthetic study.",
+    glsl,
+    poetic_statement: m.poetic_statement || "A study in computational expression.",
+    generation: genNum,
+    rated: false,
+    rating: null,
+    dna: normalizeDna(m.dna)
+  }));
+}
+
 async function generateMetadataBatch(db, userFocus, genNum) {
   const remixSection = buildRemixSection(db);
-  const systemPrompt = `You are ShaderMind planning 10 shader sketches (metadata only, NO GLSL code).
-Return a JSON array of exactly 10 objects with keys: title, type, hypothesis, poetic_statement, dna.
-Distribution: indices 0-4 type "evolutionary", 5-7 "directive", 8-9 "mutation" with bold hypotheses.
+  const { evolutionary, directive, mutation } = getBatchDistribution();
+  const systemPrompt = `You are ShaderMind planning ${BATCH_SIZE} shader sketches (metadata only, NO GLSL code).
+Zach Lieberman's daily practice: don't make something new — change one thing each day. Plan small mutations and remixes, not full reinventions.
+Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, poetic_statement, dna.
+Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis names ONE tweak to remix from a good parent), ${evolutionary}-${evolutionary + directive - 1} "directive", ${evolutionary + directive}-${BATCH_SIZE - 1} "mutation".
 Strategy: ${db.currentStrategy}
 Heuristics: ${(db.heuristics || []).join("; ")}
 ${remixSection}
-Output raw JSON array only.`;
+${MATH_COOKBOOK}
+Output raw JSON array only. DNA tags should name specific math from the cookbook.`;
 
-  const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan 10 distinctive shader concepts.`;
+  const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan ${BATCH_SIZE} fast, distinctive shader concepts — mostly small daily modifications.`;
   const rawResponse = await runInferenceBatch(systemPrompt, userPrompt, true, `metadata plan gen ${genNum}`);
   const parsed = parseJsonFromModel(rawResponse);
 
-  if (!Array.isArray(parsed) || parsed.length !== 10) {
-    throw new Error(`Metadata batch expected 10 items, got ${parsed?.length ?? 0}`);
+  if (!Array.isArray(parsed) || parsed.length !== BATCH_SIZE) {
+    throw new Error(`Metadata batch expected ${BATCH_SIZE} items, got ${parsed?.length ?? 0}`);
   }
   return parsed;
 }
 
 async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
+  const sketchType = meta.type || sketchTypeForIndex(index);
+  const parent = REMIX_MUTATION && sketchType === "evolutionary" ? pickRemixParent(db, index) : null;
   const rollup = (db.memoryRollups || []).at(-1);
-  const rollupHint = rollup?.summary ? `\nConsolidated memory: ${rollup.summary.slice(0, 600)}` : "";
+  const rollupHint = rollup?.summary ? `\nMemory: ${rollup.summary.slice(0, 300)}` : "";
+  const fastGlslModels = getTaskModels("glsl").slice(0, 1);
 
-  const systemPrompt = `You are ShaderMind writing one WebGL 1.0 fragment shader.
+  let systemPrompt;
+  let userPrompt;
+
+  if (parent) {
+    const parentGlsl = decodeGlslField(parent.glsl);
+    systemPrompt = `You are ShaderMind remixing a working WebGL 1.0 shader.
+Zach Lieberman: "don't make something new — just modify daily." Change EXACTLY ONE thing (one formula, one color, one frequency). Keep everything else identical.
+Output ONLY raw GLSL ES 1.0. No markdown. Under 80 lines.
+Rules: precision mediump float; gl_FragColor; u_time/u_resolution/u_mouse; no ES 3.0; no .u/.v swizzles; define helpers you call.`;
+    userPrompt = `Parent "${parent.title}" (${parent.dna?.join?.(", ") || "remix"}):
+${parentGlsl}
+
+ONE change to try: ${meta.hypothesis}
+Focus: ${userFocus}
+Return the full modified shader.`;
+  } else {
+    systemPrompt = `You are ShaderMind writing one WebGL 1.0 fragment shader.
 Output ONLY raw GLSL ES 1.0 source code. No markdown fences, no JSON, no explanation.
 Rules:
 - precision mediump float; at top
 - void main() { ... gl_FragColor = vec4(...); }
 - uniforms: uniform float u_time; uniform vec2 u_resolution; uniform vec2 u_mouse;
 - NEVER use GLSL ES 3.0 (no out vec4, no in vec2, no .u/.v swizzles — use .x/.y/.z only)
-- Define EVERY helper function you call (e.g. if you call permute(), include its full definition)
-- Use float loops (for(float i=0.0;i<4.0;i++)) not int loops when possible; max 8 iterations
-- No Shadertoy names (iTime, iResolution). No undefined identifiers.
-- Keep shaders under 100 lines; must compile in WebGL 1.0
+- Prefer simple hash/noise over permute/snoise unless you include full Ashima helpers
+- Use float loops; max 6 iterations
+- Keep shaders under 60 lines; must compile in WebGL 1.0
+${MATH_COOKBOOK}
 Strategy: ${db.currentStrategy}${rollupHint}`;
-
-  const userPrompt = `Generation #${genNum}, shader #${index + 1}.
+    userPrompt = `Generation #${genNum}, shader #${index + 1}.
 Title: ${meta.title}
-Type: ${meta.type}
+Type: ${sketchType}
 Hypothesis: ${meta.hypothesis}
 Focus: ${userFocus}
 DNA: ${normalizeDna(meta.dna).join(", ")}
 Write a complete, valid fragment shader.`;
+  }
 
   const label = `GLSL gen ${genNum} #${index + 1}`;
-  const maxAttempts = 4;
   let lastError = null;
 
-  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+  for (let attempt = 0; attempt < GLSL_MAX_ATTEMPTS; attempt++) {
     try {
       const raw = await runInference(systemPrompt, userPrompt, {
         task: "glsl",
         jsonMode: false,
-        retriesPerModel: 1,
+        models: attempt === 0 ? fastGlslModels : undefined,
+        retriesPerModel: 0,
         label: `${label} (pass ${attempt + 1})`,
-        maxTokens: 12000
+        maxTokens: GLSL_MAX_TOKENS
       });
 
       const validation = validateGlsl(decodeGlslField(raw.trim()));
@@ -218,8 +445,8 @@ Write a complete, valid fragment shader.`;
       return validation.code;
     } catch (err) {
       lastError = err;
-      if (attempt < maxAttempts - 1) {
-        await sleep(1000 * (attempt + 1));
+      if (attempt < GLSL_MAX_ATTEMPTS - 1) {
+        await sleep(400 * (attempt + 1));
       }
     }
   }
@@ -247,41 +474,47 @@ async function runPool(taskFns, concurrency) {
 async function generateBatchInternal(db, userFocus) {
   const genNum = db.generationCount + 1;
   setSessionAffinity(`shadermind-gen-${genNum}`);
-  autopilot.generationProgress = "planning concepts";
   autopilot.generationStartedAt = Date.now();
 
-  const metadata = await generateMetadataBatch(db, userFocus, genNum);
-  let completed = 0;
-  autopilot.generationProgress = `0/${metadata.length} shaders`;
+  let sketches;
+  if (GENERATION_MODE === "staged") {
+    autopilot.generationProgress = "planning concepts";
+    const metadata = await generateMetadataBatch(db, userFocus, genNum);
+    let completed = 0;
+    autopilot.generationProgress = `0/${metadata.length} shaders`;
 
-  const glslResults = await runPool(
-    metadata.map((m, idx) => async () => {
-      let glsl;
-      try {
-        glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
-      } catch (err) {
-        console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
-        glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
-      }
-      completed += 1;
-      autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
-      return { m, idx, glsl: decodeGlslField(glsl) };
-    }),
-    GLSL_CONCURRENCY
-  );
+    const glslResults = await runPool(
+      metadata.map((m, idx) => async () => {
+        let glsl;
+        try {
+          glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+        } catch (err) {
+          console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
+          glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+        }
+        completed += 1;
+        autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
+        return { m, idx, glsl: decodeGlslField(glsl) };
+      }),
+      GLSL_CONCURRENCY
+    );
 
-  const sketches = glslResults.map(({ m, idx, glsl }) => ({
-    id: `sketch-gen${genNum}-${idx + 1}`,
-    title: m.title || `Untitled Sketch #${idx + 1}`,
-    type: m.type || (idx < 5 ? "evolutionary" : (idx < 8 ? "directive" : "mutation")),
-    hypothesis: m.hypothesis || "Aesthetic study.",
-    glsl,
-    poetic_statement: m.poetic_statement || "A study in computational expression.",
-    generation: genNum,
-    rated: false,
-    rating: null,
-    dna: normalizeDna(m.dna)
-  }));
+    sketches = glslResults.map(({ m, idx, glsl }) => ({
+      id: `sketch-gen${genNum}-${idx + 1}`,
+      title: m.title || `Untitled Sketch #${idx + 1}`,
+      type: m.type || sketchTypeForIndex(idx),
+      hypothesis: m.hypothesis || "Aesthetic study.",
+      glsl,
+      poetic_statement: m.poetic_statement || "A study in computational expression.",
+      generation: genNum,
+      rated: false,
+      rating: null,
+      dna: normalizeDna(m.dna)
+    }));
+  } else {
+    autopilot.generationProgress = `writing ${BATCH_SIZE} shaders`;
+    sketches = await generateBatchFast(db, userFocus, genNum);
+  }
 
   autopilot.generationProgress = null;
   autopilot.generationStartedAt = null;
@@ -359,7 +592,7 @@ async function evolveStrategyInternal(db, generation, goodCount, badCount, userO
   const successRateThisGen = (goodCount / (goodCount + badCount)) * 100 || 0;
 
   const evolutionSystemPrompt = `You are "ShaderMind", a self-reflecting generative artist agent.
-Your task is to analyze feedback from your last generation of 10 sketches, evaluate your strategy, extract updated mathematical heuristics, and output an evolved strategy guidelines document.
+Your task is to analyze feedback from your last generation of sketches, evaluate your strategy, extract updated mathematical heuristics, and output an evolved strategy guidelines document.
 
 Analyze the ratio of Good vs Bad pieces. Synthesize curator opinions.
 Rewrite your "Shader Generation Strategy" to align with demonstrated taste while maintaining artistic integrity.
@@ -391,7 +624,9 @@ Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. 
     const rawResponse = await runInference(evolutionSystemPrompt, evolutionUserPrompt, {
       task: "evolution",
       jsonMode: true,
-      retriesPerModel: 3,
+      models: getTaskModels("evolution").slice(0, 1),
+      retriesPerModel: 1,
+      maxTokens: 3000,
       label: `strategy evolution gen ${generation}`
     });
     const parsedEvo = parseJsonFromModel(rawResponse);
@@ -498,15 +733,26 @@ async function maybeConsolidateMemory(db) {
   }
 }
 
-async function processFeedbackAndEvolve(db, generation, ratings, sketches, userOpinion, curatorSource) {
-  db._pendingCuratorSource = curatorSource;
-  db.learningMode = LEARNING_MODE;
+const MAX_THUMBNAIL_BYTES = 24000;
 
+function isValidThumbnail(value) {
+  return typeof value === "string"
+    && value.startsWith("data:image/")
+    && value.length <= MAX_THUMBNAIL_BYTES;
+}
+
+function applyThumbnailsToSketches(sketches, thumbnails) {
+  if (!thumbnails || !Array.isArray(sketches)) return;
+  for (const sketch of sketches) {
+    const thumb = thumbnails[sketch.id];
+    if (isValidThumbnail(thumb)) {
+      sketch.thumbnail = thumb;
+    }
+  }
+}
+
+function applyFeedbackRatings(db, generation, ratings, sketches, curatorSource) {
   const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, sketches, curatorSource);
-  const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
-  await maybeConsolidateMemory(db);
-  await saveDB(db);
-  delete db._pendingCuratorSource;
 
   if (autopilot.currentBatch) {
     autopilot.currentBatch = autopilot.currentBatch.map(s => ({
@@ -516,7 +762,57 @@ async function processFeedbackAndEvolve(db, generation, ratings, sketches, userO
     }));
   }
 
-  return { evolution, goodCount, badCount };
+  return { goodCount, badCount };
+}
+
+async function runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource) {
+  db._pendingCuratorSource = curatorSource;
+  try {
+    const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
+    await maybeConsolidateMemory(db);
+    await saveDB(db);
+    return evolution;
+  } finally {
+    delete db._pendingCuratorSource;
+  }
+}
+
+function scheduleEvolution(db, generation, goodCount, badCount, userOpinion, curatorSource) {
+  runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource)
+    .then(evolution => {
+      console.log(`[Evolution] Gen #${generation} strategy updated (${goodCount} good, ${badCount} bad)`);
+      return evolution;
+    })
+    .catch(err => {
+      console.error(`[Evolution] Gen #${generation} failed:`, err.message);
+      autopilot.lastError = err.message;
+    });
+}
+
+async function processFeedbackAndEvolve(db, generation, ratings, sketches, userOpinion, curatorSource) {
+  db.learningMode = LEARNING_MODE;
+
+  const { goodCount, badCount } = applyFeedbackRatings(db, generation, ratings, sketches, curatorSource);
+  if (userOpinion) db.lastHumanOpinion = userOpinion;
+  await clearPendingStudio(db);
+  await saveDB(db);
+
+  if (EVOLUTION_ASYNC) {
+    scheduleEvolution(db, generation, goodCount, badCount, userOpinion, curatorSource);
+    return {
+      evolution: {
+        analysis: "Ratings saved. Strategy evolution running in background while the next batch generates.",
+        heuristics: db.heuristics || [],
+        evolvedStrategy: db.currentStrategy
+      },
+      goodCount,
+      badCount,
+      evolutionPending: true
+    };
+  }
+
+  const evolution = await runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource);
+  return { evolution, goodCount, badCount, evolutionPending: false };
 }
 
 async function waitForHumanOrTimeout() {
@@ -539,7 +835,10 @@ async function waitForHumanOrTimeout() {
 
 async function runAutopilotCycle() {
   const db = await loadDB();
+  await clearPendingStudio(db);
+
   const focus = autopilot.lastHumanOpinion
+    || db.lastHumanOpinion
     || db.heuristics?.[0]
     || "Organic flow, slow liquid motion, warm amber gradients like candle flames in wind";
 
@@ -563,6 +862,7 @@ async function runAutopilotCycle() {
   }
 
   autopilot.phase = "awaiting_human";
+  await savePendingStudio(db);
   console.log(`[Autopilot] Gen #${generation} ready — ${LEARNING_MODE === "hybrid" ? "human or timeout" : "waiting for human curation"}`);
 
   const curationResult = await waitForHumanOrTimeout();
@@ -639,6 +939,8 @@ app.get("/api/state", async (req, res) => {
       statistics: db.statistics,
       sketchesCount: db.sketches.length,
       learningMode: LEARNING_MODE,
+      generationMode: GENERATION_MODE,
+      evolutionAsync: EVOLUTION_ASYNC,
       aiProvider: getAIConfig(),
       lastConsolidationGen: db.lastConsolidationGen || 0,
       memoryRollup: rollup ? {
@@ -718,6 +1020,7 @@ app.get("/api/autopilot/status", (req, res) => {
     currentGeneration: autopilot.currentGeneration,
     currentBatch: autopilot.currentBatch?.map(prepareSketchForClient) ?? null,
     generationProgress: autopilot.generationProgress,
+    generationMode: GENERATION_MODE,
     intervalMs: AUTOPILOT_INTERVAL_MS
   });
 });
@@ -731,6 +1034,54 @@ app.post("/api/autopilot/kick", (req, res) => {
     startAutopilot(Infinity);
   }
   res.json({ success: true, phase: autopilot.phase, running: autopilot.running });
+});
+
+app.post("/api/autopilot/generate-next", async (req, res) => {
+  if (autopilot.phase === "awaiting_human") {
+    return res.status(409).json({ error: "Rate the current batch first." });
+  }
+  if (autopilot.phase === "generating") {
+    return res.status(409).json({ error: "Already generating." });
+  }
+
+  const focus = req.body?.focus?.trim();
+  if (focus) {
+    autopilot.lastHumanOpinion = focus;
+    try {
+      const db = await loadDB();
+      db.lastHumanOpinion = focus;
+      await saveDB(db);
+    } catch (err) {
+      console.warn("[Autopilot] Could not persist focus:", err.message);
+    }
+  }
+
+  if (!autopilot.running) {
+    startAutopilot(Infinity);
+    return res.json({ success: true, message: "Autopilot started.", phase: autopilot.phase });
+  }
+
+  if (autopilot.phase === "error" || autopilot.phase === "idle") {
+    if (!autopilot._manualCycle) {
+      autopilot._manualCycle = runAutopilotCycle()
+        .catch(err => {
+          autopilot.lastError = err.message;
+          autopilot.phase = "error";
+          console.error("[Autopilot] Manual generate failed:", err.message);
+        })
+        .finally(() => {
+          autopilot._manualCycle = null;
+        });
+    }
+    return res.json({ success: true, message: "Generation started.", phase: "generating" });
+  }
+
+  res.json({
+    success: true,
+    message: "Next batch is already queued.",
+    phase: autopilot.phase,
+    running: autopilot.running
+  });
 });
 
 app.post("/api/autopilot/start", (req, res) => {
@@ -775,19 +1126,42 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+app.post("/api/sketches/thumbnail", async (req, res) => {
+  const { id, thumbnail } = req.body || {};
+  if (!id || !isValidThumbnail(thumbnail)) {
+    return res.status(400).json({ error: "Invalid sketch id or thumbnail." });
+  }
+
+  try {
+    const db = await loadDB();
+    const idx = db.sketches.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Sketch not found." });
+    }
+    db.sketches[idx].thumbnail = thumbnail;
+    await saveDB(db);
+    res.json({ success: true, id });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.post("/api/feedback", async (req, res) => {
   const db = await loadDB();
-  const { generation, ratings, userOpinion, newSketches } = req.body;
+  const { generation, ratings, userOpinion, newSketches, thumbnails } = req.body;
 
   if (!generation || !ratings) {
     return res.status(400).json({ error: "Missing generation or ratings." });
   }
 
-  autopilot.phase = "evolving";
+  if (newSketches?.length) {
+    applyThumbnailsToSketches(newSketches, thumbnails);
+  }
+
   autopilot.lastHumanOpinion = userOpinion || null;
 
   try {
-    const { evolution, goodCount, badCount } = await processFeedbackAndEvolve(
+    const { evolution, goodCount, badCount, evolutionPending } = await processFeedbackAndEvolve(
       db,
       generation,
       ratings,
@@ -798,12 +1172,15 @@ app.post("/api/feedback", async (req, res) => {
 
     releaseHumanGate();
     autopilot.phase = "waiting";
+    autopilot.currentBatch = null;
+    autopilot.currentGeneration = null;
 
     res.json({
       success: true,
       analysis: evolution.analysis,
       heuristics: evolution.heuristics,
       evolvedStrategy: evolution.evolvedStrategy,
+      evolutionPending,
       successRate: db.successRate,
       totalSketches: db.totalSketches,
       goodCount,
@@ -813,7 +1190,7 @@ app.post("/api/feedback", async (req, res) => {
     await saveDB(db);
     releaseHumanGate();
     autopilot.phase = "error";
-    res.status(500).json({ error: "Feedback recorded but evolution failed.", details: err.message });
+    res.status(500).json({ error: "Feedback failed.", details: err.message });
   }
 });
 
@@ -882,15 +1259,26 @@ app.listen(PORT, "0.0.0.0", async () => {
   if (ai.geminiFallback) {
     console.log(`AI fallback: Gemini (${process.env.GEMINI_MODEL || "gemini-2.5-flash"})`);
   }
+  console.log(`Generation: mode=${GENERATION_MODE}, batch=${ai.batchSize}, glsl concurrency=${ai.glslConcurrency}, remix=${REMIX_MUTATION}`);
+  console.log(`Loop: autopilot delay=${AUTOPILOT_INTERVAL_MS}ms, evolution async=${EVOLUTION_ASYNC}`);
   console.log(`Learning: mode=${LEARNING_MODE}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
   if (AUTOPILOT_ENABLED) {
     const db = await loadDB();
+    if (db.lastHumanOpinion) {
+      autopilot.lastHumanOpinion = db.lastHumanOpinion;
+    }
     const target = Math.max(0, AUTOPILOT_SEED_CYCLES - db.generationCount);
-    console.log(`Starting autonomous autopilot (continuous, seed target: ${AUTOPILOT_SEED_CYCLES} gens)...`);
-    startAutopilot(Infinity);
-    if (target > 0) {
-      console.log(`Will autonomously seed ${target} generation(s) before demo-ready state.`);
+    if (await restorePendingStudio(db)) {
+      autopilot.running = true;
+      autopilot.loopPromise = resumePendingAutopilotCycle();
+      console.log(`Restored studio batch for Gen #${autopilot.currentGeneration} (${autopilot.currentBatch.length} shaders)`);
+    } else {
+      console.log(`Starting autonomous autopilot (continuous, seed target: ${AUTOPILOT_SEED_CYCLES} gens)...`);
+      startAutopilot(Infinity);
+      if (target > 0) {
+        console.log(`Will autonomously seed ${target} generation(s) before demo-ready state.`);
+      }
     }
   }
 });
