@@ -5,8 +5,10 @@
  * Catches compilation errors and renders them visually in the canvas.
  */
 export class ShaderRenderer {
-  constructor(canvas) {
+  constructor(canvas, options = {}) {
     this.canvas = canvas;
+    this.onCompileResult = options.onCompileResult || null;
+    this.compileResultReported = false;
     this.gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
     this.program = null;
     this.animationFrameId = null;
@@ -142,8 +144,10 @@ export class ShaderRenderer {
   compileWhenReady(fragmentShaderSource) {
     const source = this.sanitizeGlslSource(fragmentShaderSource);
     const attempt = () => this.compile(source);
+    const firstAttemptSucceeded = attempt();
+    this.reportCompileResult(firstAttemptSucceeded);
 
-    if (attempt()) return true;
+    if (firstAttemptSucceeded) return true;
 
     const parent = this.canvas.parentElement;
     if (!parent) return false;
@@ -160,6 +164,16 @@ export class ShaderRenderer {
     });
 
     return false;
+  }
+
+  reportCompileResult(success) {
+    if (!this.onCompileResult || this.compileResultReported) return;
+    this.compileResultReported = true;
+    this.onCompileResult({
+      success,
+      error: success ? null : (this.error || "Shader compilation failed."),
+      reportedAt: new Date().toISOString()
+    });
   }
 
   compileShader(type, source) {

@@ -19,6 +19,7 @@ class ShaderMindUI {
     this.sketches = [];
     this.activeBatch = null;
     this.userRatings = {};
+    this.compileResults = {};
 
     this.els = {
       statGen: document.getElementById("statGen"),
@@ -149,6 +150,7 @@ class ShaderMindUI {
       this.displayedGeneration = gen;
       this.activeBatch = batch;
       this.userRatings = {};
+      this.compileResults = {};
       this.buildGrid(batch, awaiting);
     }
 
@@ -227,10 +229,27 @@ class ShaderMindUI {
 
       wrap.addEventListener("click", () => this.openDialog(sketch));
 
-      const renderer = new ShaderRenderer(canvas);
+      const renderer = new ShaderRenderer(canvas, {
+        onCompileResult: awaitingHuman
+          ? result => this.reportCompileResult(sketch.id, result)
+          : null
+      });
       this.renderers.set(sketch.id, renderer);
       renderer.compileWhenReady(sketch.glsl);
     });
+  }
+
+  reportCompileResult(sketchId, result) {
+    this.compileResults[sketchId] = result;
+
+    const sketch = this.activeBatch?.find(item => item.id === sketchId);
+    if (sketch) sketch.compile = result;
+
+    fetch(`/api/sketches/${encodeURIComponent(sketchId)}/compile-result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(err => console.warn("Compile result was not reported:", err.message));
   }
 
   rateSketch(sketchId, rating) {
@@ -264,6 +283,7 @@ class ShaderMindUI {
 
     const gen = this.activeBatch[0].generation;
     const ratings = { ...this.userRatings };
+    const explicitRatingIds = Object.keys(this.userRatings);
 
     this.activeBatch.forEach(s => {
       if (!ratings[s.id]) ratings[s.id] = "bad";
@@ -280,6 +300,8 @@ class ShaderMindUI {
         body: JSON.stringify({
           generation: gen,
           ratings,
+          explicitRatingIds,
+          compileResults: this.compileResults,
           userOpinion: this.els.userOpinion.value.trim(),
           newSketches: this.activeBatch
         })
@@ -290,6 +312,7 @@ class ShaderMindUI {
 
       this.els.userOpinion.value = "";
       this.userRatings = {};
+      this.compileResults = {};
       this.displayedGeneration = null;
       this.els.reflectionText.textContent = result.analysis || "Strategy evolved.";
       await this.poll();
