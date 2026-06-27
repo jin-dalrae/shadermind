@@ -98,7 +98,7 @@ The app is a single scrolling experience with four regions:
 | Frontend | Vanilla HTML/CSS/JS, editorial gallery UI, WebGL 1.0 renderer |
 | Backend | Node.js + Express |
 | Storage | `database.json` (strategy timeline, heuristics, sketches) |
-| AI | Google Gemini API (Gemini-only batch pipeline; DO fallback disabled by default) |
+| AI | Google Gemini API (exclusive — all generation, curation, evolution) |
 
 ### Generation pipeline (Gemini-maximized)
 1. **Metadata plan** — 10 concepts as JSON (`gemini-2.5-flash`)
