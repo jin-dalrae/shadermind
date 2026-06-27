@@ -2,9 +2,21 @@
 
 **An autonomous GLSL artist that learns taste in public.**
 
-Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It generates WebGL fragment shaders, learns from your Good/Bad ratings, and rewrites an explicit **strategy genome** — a readable preference model inspired by [PLUS](https://arxiv.org/abs/2507.13579) (Preference Learning Using Summarization).
+Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It generates WebGL fragment shaders, learns from your **1–5 ratings**, and rewrites an explicit **strategy genome** — a readable preference model inspired by [PLUS](https://arxiv.org/abs/2507.13579) (Preference Learning Using Summarization).
 
 > *"Don't make something new — change one thing each day."* — Zach Lieberman, *10 Years of Daily Sketches* (metaphorical north star: **3,650 sketches**)
+
+**Hackathon:** 2026 AI Engineer World's Fair · Continual Learning track
+
+---
+
+## For AI agents — read this first
+
+| Step | Document |
+|------|----------|
+| 1 | **[AGENTS.md](./AGENTS.md)** — handoff, repo map, API, env, open bugs |
+| 2 | **[agents-learning-model.md](./agents-learning-model.md)** — code-aware learning memory model |
+| 3 | **[work/learning-feature.md](./work/learning-feature.md)** — spec + remaining work |
 
 ---
 
@@ -12,9 +24,9 @@ Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It gen
 
 | Problem | ShaderMind's answer |
 |---|---|
-| RLHF treats taste as one shared reward model | **Heuristic memory** + **strategy genome** — text you can read and audit |
+| RLHF treats taste as one shared reward model | **Heuristic memory** + **preference memory** + **strategy genome** — text you can read and audit |
 | Prompt → image, then forget | **Continual learning loop** across generations |
-| Black-box scores | Reflection notes, approval-rate heuristics, evolution timeline |
+| Black-box scores | 1–5 ratings, reflection notes, evolution timeline |
 | Generic shader toys | Stateful agent: plans → codes → curates → evolves → repeats |
 
 ---
@@ -22,9 +34,9 @@ Most creative AI assumes one aesthetic fits everyone. ShaderMind doesn't. It gen
 ## See it in 30 seconds
 
 1. Open the **Studio** — live WebGL shaders animate with `u_time`, `u_resolution`, `u_mouse`.
-2. Rate each sketch **Good** or **Bad**, add an optional note, hit **Submit & next batch**.
-3. Scroll **Mind** — heuristics like *"organic flow + slow motion → 75% approval"*.
-4. Scroll **Evolution** — generation milestones with saved thumbnails of approved work.
+2. Rate every shader **1–5**, add an optional note, hit **Submit & next batch**.
+3. Scroll **Mind** — heuristics distilled from your rating distribution.
+4. Scroll **Evolution** — generation milestones with thumbnails of high-rated work.
 5. Click **Explain artistic evolution** — the agent narrates its own arc.
 
 The artifact isn't one pretty shader. It's the **preference model getting sharper**.
@@ -35,9 +47,9 @@ The artifact isn't one pretty shader. It's the **preference model getting sharpe
 
 ```mermaid
 flowchart LR
-  A[Generate GLSL batch] --> B[Human rates Good/Bad]
-  B --> C[Save ratings + thumbnails]
-  C --> D[Evolve strategy genome]
+  A[Generate GLSL batch] --> B[Human rates 1–5]
+  B --> C[Save ratings + compile results + thumbnails]
+  C --> D[Build preference memory + evolve strategy]
   D --> E[Update heuristics]
   E --> A
 ```
@@ -45,6 +57,8 @@ flowchart LR
 **Human-in-the-loop by default** — the agent never auto-rates your batch unless you switch to autonomous/hybrid mode.
 
 **Fast path** — one inference call writes a full batch of compile-ready shaders; strategy evolution runs in the background so the next batch starts immediately.
+
+**Code-aware learning** — retrieval over past shaders, similarity checks, and preference memory inform staged generation and evolution.
 
 ---
 
@@ -54,7 +68,7 @@ flowchart LR
 |---|---|
 | **Studio** | Current batch in a full-width gallery; click any cell for detail view |
 | **Latest reflection** | Agent self-criticism after your last curation |
-| **Evolution** | Real milestones per generation — notes + thumbnails of Good shaders |
+| **Evolution** | Real milestones per generation — notes + thumbnails of 4–5 rated shaders |
 | **Mind** | Learned heuristics, reflection log, artistic monologue |
 
 Batch composition (configurable, default **3**): evolutionary remixes from approved shaders, directive responses to your notes, and mutation sketches with an explicit hypothesis on the card.
@@ -65,18 +79,19 @@ Batch composition (configurable, default **3**): evolutionary remixes from appro
 
 | Layer | Choice |
 |---|---|
-| Frontend | Vanilla HTML/CSS/JS, WebGL 1.0 renderer, editorial gallery UI |
+| Frontend | Vanilla HTML/CSS/JS, shared WebGL grid renderer, editorial gallery UI |
 | Backend | Node.js + Express |
 | AI | **DigitalOcean Inference** (primary) — per-task model pools; optional Gemini fallback |
-| Storage | **MongoDB Atlas** in production; `database.json` for local dev / failover |
+| Storage | **MongoDB Atlas** in production; optional **SQLite** locally; `database.json` for dev / failover / mirror |
 | Deploy | DigitalOcean App Platform or Docker (`8080`) |
 
-### Generation pipeline (fast mode)
+### Generation pipeline
 
-1. **Single-shot batch** — metadata + inline GLSL in one JSON response (`qwen3-coder-flash` first for code)
-2. **Validate & patch** — WebGL 1.0 sanitizer, Ashima noise helpers, low-effort output rejection
-3. **Human curation** — ratings persisted; 64×64 JPEG thumbnails captured on Good
-4. **Async evolution** — heuristics + strategy genome update without blocking the next batch
+1. **Fast mode** — metadata + inline GLSL in one JSON response
+2. **Staged mode** — plan concepts, then per-shader GLSL with learning context
+3. **Validate & patch** — WebGL 1.0 sanitizer, anti-lazy shader validation
+4. **Human curation** — 1–5 ratings persisted; thumbnails on 4–5
+5. **Async evolution** — critique, preference memory, heuristics + strategy genome update
 
 ---
 
@@ -95,11 +110,17 @@ git clone https://github.com/jin-dalrae/shadermind.git
 cd shadermind
 npm install
 cp .env.example .env
-# Edit .env — set DIGITAL_OCEAN_MODEL_ACCESS_KEY and MONGODB_URI
+# Edit .env — set DIGITAL_OCEAN_MODEL_ACCESS_KEY (and MONGODB_URI for production parity)
 npm start
 ```
 
 Open **http://localhost:8080**
+
+```bash
+npm test
+```
+
+Set `AUTOPILOT=false` in `.env` to browse saved art without generating.
 
 ### Migrate local JSON → MongoDB
 
@@ -124,6 +145,8 @@ See `.do/app.yaml` and `Dockerfile` for reference configs.
 | `LEARNING_MODE` | `human` | `human` · `autonomous` · `hybrid` |
 | `GENERATION_MODE` | `fast` | `fast` (1 call) or `staged` (plan + N GLSL calls) |
 | `BATCH_SIZE` | `3` | Shaders per generation |
+| `CODE_AWARE_LEARNING` | `true` | Retrieval + preference memory in generation |
+| `USE_SQLITE` | `false` | Local SQLite with optional JSON mirror |
 | `AUTOPILOT_INTERVAL_MS` | `0` | Delay after submit before next batch |
 | `EVOLUTION_ASYNC` | `true` | Strategy update in background |
 
@@ -133,7 +156,7 @@ Full list in [`.env.example`](.env.example).
 
 ## Hackathon alignment
 
-**Theme: Continual Learning** — ShaderMind adapts *how* it generates from real curation feedback: memory rollups, heuristic extraction, strategy rewrites, and remix seeds from approved shaders.
+**Theme: Continual Learning** — ShaderMind adapts *how* it generates from real curation feedback: memory rollups, preference memory, heuristic extraction, strategy rewrites, and remix seeds from high-rated shaders.
 
 **Research tie-in: PLUS** — Like PLUS's preference summaries, ShaderMind compresses curation history into interpretable text that conditions the next generation — not a frozen reward model.
 
@@ -149,11 +172,12 @@ Full list in [`.env.example`](.env.example).
 ```
 shadermind/
 ├── server.js              # Express API, autopilot loop, generation
-├── lib/                   # AI routing, GLSL validation, memory, math cookbook
-├── public/                # Gallery UI, WebGL renderer, shader patcher
-├── storage/               # MongoDB + JSON adapters
+├── lib/                   # AI routing, GLSL validation, memory, learning engine
+├── public/                # Gallery UI, shared grid renderer, shader patcher
+├── storage/               # MongoDB + SQLite + JSON adapters
+├── test/                  # Learning engine tests
 ├── scripts/               # migrate:mongo, repair:glsl
-└── project_blueprint/     # Pitch, PRD, hackathon notes
+└── work/                  # Agent handoff docs
 ```
 
 ---

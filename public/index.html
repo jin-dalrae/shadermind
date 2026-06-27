@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="index.css">
+  <link rel="stylesheet" href="index.css?v=5">
 </head>
 <body>
   <header class="site-header">
@@ -46,17 +46,17 @@
       <div class="shader-grid" id="shaderGrid"></div>
 
       <div class="empty-state" id="emptyState">
-        <p>Waiting for the first batch.</p>
+        <p>No batch yet. Add GEMINI_API_KEY to generate new art, or refresh to view saved sketches.</p>
       </div>
 
       <div class="curation-panel" id="curationPanel" hidden>
         <div class="curation-head">
           <h3>Your curation</h3>
-          <p>Rate each shader Good or Bad, add an optional note, then submit — the next batch generates immediately.</p>
+          <p>Rate every shader from 1 (low) to 5 (high), add an optional note, then submit — the next batch generates immediately.</p>
         </div>
         <textarea id="userOpinion" placeholder="e.g. Slower motion, warmer ambers, less grid noise, more liquid flow…"></textarea>
         <div class="curation-actions">
-          <span class="curation-hint" id="curationHint">Rate at least one shader</span>
+          <span class="curation-hint" id="curationHint">Rate every shader from 1 to 5</span>
           <button type="button" class="btn-submit" id="btnSubmitFeedback" disabled>Submit &amp; next batch</button>
         </div>
       </div>
@@ -132,6 +132,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?v=10"></script>
+  <script type="module" src="app.js?v=11"></script>
 </body>
 </html>

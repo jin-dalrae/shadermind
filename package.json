@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
+    "test": "node --test",
     "migrate:mongo": "node scripts/migrate-json-to-mongo.js",
     "repair:glsl": "node scripts/repair-glsl.js"
   },

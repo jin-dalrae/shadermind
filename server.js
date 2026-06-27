@@ -9,6 +9,19 @@ import { parseJsonFromModel } from "./lib/json.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
 import { assembleWorkingMemory, buildRemixSection, consolidateMemory } from "./lib/memory.js";
 import { MATH_COOKBOOK, MATH_COOKBOOK_COMPACT } from "./lib/math-cookbook.js";
+import {
+  EMPTY_PREFERENCE_MEMORY,
+  buildExampleContext,
+  buildExampleDescriptions,
+  buildNoveltyBrief,
+  buildPreferenceMemory,
+  buildPreferenceSummary,
+  extractCodeFeatures,
+  findMostSimilarShader,
+  normalizeDna,
+  ratingValue,
+  selectLearningExamples
+} from "./lib/learning.js";
 
 dotenv.config();
 
@@ -32,12 +45,16 @@ const REMIX_MUTATION = process.env.REMIX_MUTATION !== "false";
 const LEARNING_MODE = process.env.LEARNING_MODE || "human";
 const HYBRID_TIMEOUT_MS = Number(process.env.HYBRID_TIMEOUT_MS) || 300000;
 const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
+const CODE_AWARE_LEARNING = process.env.CODE_AWARE_LEARNING !== "false";
+const LEARNING_CONTEXT_CHARS = Number(process.env.LEARNING_CONTEXT_CHARS) || 9000;
+const SHADER_SIMILARITY_THRESHOLD = Number(process.env.SHADER_SIMILARITY_THRESHOLD) || 0.82;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public"), {
   setHeaders(res, filePath) {
-    if (filePath.endsWith(".js") || filePath.endsWith(".css")) {
-      res.setHeader("Cache-Control", "no-cache");
+    if (/\.(html?|js|css)$/i.test(filePath)) {
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("Pragma", "no-cache");
     }
   }
 }));
@@ -69,12 +86,6 @@ function releaseHumanGate() {
   }
 }
 
-function normalizeDna(dna) {
-  if (Array.isArray(dna)) return dna.map(String).filter(Boolean);
-  if (typeof dna === "string") return dna.split(/[,;|]/).map(s => s.trim()).filter(Boolean);
-  return ["experiment"];
-}
-
 function getBatchDistribution(size = BATCH_SIZE) {
   const evolutionary = Math.max(1, Math.floor(size * 0.5));
   const directive = Math.max(1, Math.floor(size * 0.3));
@@ -95,7 +106,7 @@ function sketchTypeForIndex(index, size = BATCH_SIZE) {
 }
 
 function pickRemixParent(db, index) {
-  const goods = db.sketches.filter(s => s.rating === "good");
+  const goods = db.sketches.filter(s => ratingValue(s.rating) >= 4);
   if (!goods.length) return null;
   return goods[index % goods.length];
 }
@@ -366,6 +377,13 @@ Output raw JSON array only.`;
 async function generateMetadataBatch(db, userFocus, genNum) {
   const remixSection = buildRemixSection(db);
   const { evolutionary, directive, mutation } = getBatchDistribution();
+  const preferenceSummary = CODE_AWARE_LEARNING
+    ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
+    : "";
+  const examples = CODE_AWARE_LEARNING
+    ? selectLearningExamples(db, userFocus, { limit: 4, currentGeneration: genNum })
+    : [];
+  const exampleDescriptions = buildExampleDescriptions(examples);
   const systemPrompt = `You are ShaderMind planning ${BATCH_SIZE} shader sketches (metadata only, NO GLSL code).
 Zach Lieberman's daily practice: don't make something new — change one thing each day. Plan small mutations and remixes, not full reinventions.
 Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, poetic_statement, dna.
@@ -373,7 +391,8 @@ Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis
 Strategy: ${db.currentStrategy}
 Heuristics: ${(db.heuristics || []).join("; ")}
 ${remixSection}
-${MATH_COOKBOOK}
+${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${MATH_COOKBOOK}
+Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only. DNA tags should name specific math from the cookbook.`;
 
   const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan ${BATCH_SIZE} fast, distinctive shader concepts — mostly small daily modifications.`;
@@ -386,23 +405,64 @@ Output raw JSON array only. DNA tags should name specific math from the cookbook
   return parsed;
 }
 
+function buildLearningContext(type, examples, exampleContext, similarity) {
+  return {
+    preferenceMemoryVersion: 0,
+    exampleIds: examples.map(example => example.id),
+    retrievalScores: examples.map(example => example.retrievalScore),
+    contextCharacters: exampleContext.length,
+    policy: type === "mutation" ? "explore" : type === "directive" ? "directive" : "exploit",
+    similarityScore: similarity?.score ?? null,
+    similaritySourceId: similarity?.id ?? null,
+    similarityWarning: (similarity?.score ?? 0) >= SHADER_SIMILARITY_THRESHOLD
+  };
+}
+
+function fallbackGeneratedSketch(glsl, genNum, index, type) {
+  return {
+    glsl,
+    prompt: `Fallback for generation ${genNum}, shader ${index + 1}`,
+    codeFeatures: extractCodeFeatures(glsl),
+    learningContext: {
+      preferenceMemoryVersion: 0,
+      exampleIds: [],
+      retrievalScores: [],
+      contextCharacters: 0,
+      policy: type === "mutation" ? "explore" : type === "directive" ? "directive" : "exploit",
+      similarityScore: null,
+      similaritySourceId: null,
+      similarityWarning: false
+    }
+  };
+}
+
 async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
   const sketchType = meta.type || sketchTypeForIndex(index);
   const parent = REMIX_MUTATION && sketchType === "evolutionary" ? pickRemixParent(db, index) : null;
   const rollup = (db.memoryRollups || []).at(-1);
   const rollupHint = rollup?.summary ? `\nMemory: ${rollup.summary.slice(0, 300)}` : "";
   const fastGlslModels = getTaskModels("glsl").slice(0, 1);
+  const exampleLimit = sketchType === "evolutionary" ? 2 : sketchType === "directive" ? 1 : 0;
+  const examples = CODE_AWARE_LEARNING && !parent
+    ? selectLearningExamples(db, meta, { limit: exampleLimit, currentGeneration: genNum })
+    : [];
+  const exampleContext = buildExampleContext(examples, LEARNING_CONTEXT_CHARS);
+  const preferenceSummary = CODE_AWARE_LEARNING
+    ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
+    : "";
+  const noveltyBrief = buildNoveltyBrief(examples);
 
   let systemPrompt;
-  let userPrompt;
+  let basePrompt;
 
   if (parent) {
     const parentGlsl = decodeGlslField(parent.glsl);
     systemPrompt = `You are ShaderMind remixing a working WebGL 1.0 shader.
 Zach Lieberman: "don't make something new — just modify daily." Change EXACTLY ONE thing (one formula, one color, one frequency). Keep everything else identical.
 Output ONLY raw GLSL ES 1.0. No markdown. Under 80 lines.
-Rules: precision mediump float; gl_FragColor; u_time/u_resolution/u_mouse; no ES 3.0; no .u/.v swizzles; define helpers you call.`;
-    userPrompt = `Parent "${parent.title}" (${parent.dna?.join?.(", ") || "remix"}):
+Rules: precision mediump float; gl_FragColor; u_time/u_resolution/u_mouse; no ES 3.0; no .u/.v swizzles; define helpers you call.
+${preferenceSummary}`;
+    basePrompt = `Parent "${parent.title}" (${parent.dna?.join?.(", ") || "remix"}):
 ${parentGlsl}
 
 ONE change to try: ${meta.hypothesis}
@@ -420,22 +480,31 @@ Rules:
 - Use float loops; max 6 iterations
 - Keep shaders under 60 lines; must compile in WebGL 1.0
 ${MATH_COOKBOOK}
-Strategy: ${db.currentStrategy}${rollupHint}`;
-    userPrompt = `Generation #${genNum}, shader #${index + 1}.
+Strategy: ${db.currentStrategy}${rollupHint}
+${preferenceSummary}`;
+    basePrompt = `Generation #${genNum}, shader #${index + 1}.
 Title: ${meta.title}
 Type: ${sketchType}
 Hypothesis: ${meta.hypothesis}
 Focus: ${userFocus}
 DNA: ${normalizeDna(meta.dna).join(", ")}
+Novelty requirement: ${noveltyBrief}
 Write a complete, valid fragment shader.`;
   }
+
+  const userPrompt = exampleContext
+    ? `${basePrompt}\n\nStudy these references for principles, not exact structure:\n${exampleContext}`
+    : basePrompt;
 
   const label = `GLSL gen ${genNum} #${index + 1}`;
   let lastError = null;
 
   for (let attempt = 0; attempt < GLSL_MAX_ATTEMPTS; attempt++) {
     try {
-      const raw = await runInference(systemPrompt, userPrompt, {
+      const prompt = attempt > 0 && CODE_AWARE_LEARNING
+        ? `${userPrompt}\n\nPrevious attempt failed validation. Rewrite with a different structure while keeping the hypothesis.`
+        : userPrompt;
+      const raw = await runInference(systemPrompt, prompt, {
         task: "glsl",
         jsonMode: false,
         models: attempt === 0 ? fastGlslModels : undefined,
@@ -444,11 +513,41 @@ Write a complete, valid fragment shader.`;
         maxTokens: GLSL_MAX_TOKENS
       });
 
-      const validation = validateGlsl(decodeGlslField(raw.trim()));
+      let glsl = decodeGlslField(raw.trim());
+      let validation = validateGlsl(glsl);
       if (!validation.valid) {
         throw new Error(validation.reason);
       }
-      return validation.code;
+      glsl = validation.code;
+
+      let similarity = findMostSimilarShader(glsl, db.sketches);
+      if (CODE_AWARE_LEARNING && similarity.score >= SHADER_SIMILARITY_THRESHOLD) {
+        const retryPrompt = `${userPrompt}\n\nYour first result was too similar to ${similarity.id} (${similarity.score}). Rewrite it with a different coordinate system, function layout, palette, and motion equation.`;
+        const retryRaw = await runInference(systemPrompt, retryPrompt, {
+          task: "glsl",
+          jsonMode: false,
+          models: fastGlslModels,
+          retriesPerModel: 0,
+          label: `${label} novelty retry`,
+          maxTokens: GLSL_MAX_TOKENS
+        });
+        validation = validateGlsl(decodeGlslField(retryRaw.trim()));
+        if (!validation.valid) {
+          throw new Error(validation.reason);
+        }
+        glsl = validation.code;
+        similarity = findMostSimilarShader(glsl, db.sketches);
+      }
+
+      return {
+        glsl,
+        prompt: basePrompt,
+        codeFeatures: extractCodeFeatures(glsl),
+        learningContext: {
+          ...buildLearningContext(sketchType, examples, exampleContext, similarity),
+          preferenceMemoryVersion: db.preferenceMemory?.version || 0
+        }
+      };
     } catch (err) {
       lastError = err;
       if (attempt < GLSL_MAX_ATTEMPTS - 1) {
@@ -491,30 +590,43 @@ async function generateBatchInternal(db, userFocus) {
 
     const glslResults = await runPool(
       metadata.map((m, idx) => async () => {
-        let glsl;
+        const sketchType = m.type || sketchTypeForIndex(idx);
+        let generated;
         try {
-          glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+          generated = await generateGlslForSketch(m, db, userFocus, genNum, idx);
         } catch (err) {
           console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
-          glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
+          generated = fallbackGeneratedSketch(
+            FALLBACK_GLSL[idx % FALLBACK_GLSL.length],
+            genNum,
+            idx,
+            sketchType
+          );
         }
         completed += 1;
         autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
-        return { m, idx, glsl: decodeGlslField(glsl) };
+        return { m, idx, generated };
       }),
       GLSL_CONCURRENCY
     );
 
-    sketches = glslResults.map(({ m, idx, glsl }) => ({
+    sketches = glslResults.map(({ m, idx, generated }) => ({
       id: `sketch-gen${genNum}-${idx + 1}`,
       title: m.title || `Untitled Sketch #${idx + 1}`,
       type: m.type || sketchTypeForIndex(idx),
       hypothesis: m.hypothesis || "Aesthetic study.",
-      glsl,
+      glsl: decodeGlslField(generated.glsl),
       poetic_statement: m.poetic_statement || "A study in computational expression.",
       generation: genNum,
       rated: false,
       rating: null,
+      ratingSource: null,
+      generationFocus: userFocus,
+      prompt: generated.prompt,
+      compile: { success: null, error: null, reportedAt: null },
+      critique: null,
+      codeFeatures: generated.codeFeatures,
+      learningContext: generated.learningContext,
       dna: normalizeDna(m.dna)
     }));
   } else {
@@ -527,59 +639,98 @@ async function generateBatchInternal(db, userFocus) {
   return { generation: genNum, sketches };
 }
 
-function recordRatingsAndPersist(db, generation, ratings, newSketches, curatorSource = "human") {
-  let goodCount = 0;
-  let badCount = 0;
+function recordRatingsAndPersist(
+  db,
+  generation,
+  ratings,
+  newSketches,
+  explicitRatingIds = [],
+  compileResults = {},
+  curatorSource = "human"
+) {
+  const ratingCounts = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 };
+  let ratingTotal = 0;
+  let ratedCount = 0;
+  const explicitIds = new Set(Array.isArray(explicitRatingIds) ? explicitRatingIds : []);
+  const safeCompileResults = compileResults && typeof compileResults === "object"
+    ? compileResults
+    : {};
 
   if (newSketches && Array.isArray(newSketches)) {
     newSketches.forEach(s => {
-      const rating = ratings[s.id] || "bad";
-      s.rated = true;
-      s.rating = rating;
-
-      if (rating === "good") goodCount++;
-      else badCount++;
-
+      const rating = ratingValue(ratings[s.id]);
+      if (rating === null) return;
       const existingIdx = db.sketches.findIndex(e => e.id === s.id);
+      const existing = existingIdx >= 0 ? db.sketches[existingIdx] : {};
+      const storedSketch = {
+        ...existing,
+        ...s,
+        rated: true,
+        rating,
+        ratingSource: explicitIds.has(s.id) ? "explicit" : "defaulted",
+        compile: normalizeCompileResult(safeCompileResults[s.id] || s.compile || existing.compile),
+        codeFeatures: s.codeFeatures || extractCodeFeatures(s.glsl)
+      };
+
+      ratingCounts[rating] += 1;
+      ratingTotal += rating;
+      ratedCount += 1;
+
       if (existingIdx === -1) {
-        db.sketches.push(s);
+        db.sketches.push(storedSketch);
         db.totalSketches++;
       } else {
-        db.sketches[existingIdx] = { ...db.sketches[existingIdx], ...s };
+        db.sketches[existingIdx] = storedSketch;
       }
     });
   } else {
     db.sketches.forEach(s => {
-      if (ratings[s.id]) {
+      const rating = ratingValue(ratings[s.id]);
+      if (rating !== null) {
         s.rated = true;
-        s.rating = ratings[s.id];
-        if (s.rating === "good") goodCount++;
-        else if (s.rating === "bad") badCount++;
+        s.rating = rating;
+        s.ratingSource = explicitIds.has(s.id) ? "explicit" : "defaulted";
+        s.compile = normalizeCompileResult(safeCompileResults[s.id] || s.compile);
+        s.codeFeatures ||= extractCodeFeatures(s.glsl);
+        ratingCounts[rating] += 1;
+        ratingTotal += rating;
+        ratedCount += 1;
       }
     });
   }
 
   db.generationCount = Math.max(db.generationCount, generation);
-  const totalRatedSketches = db.sketches.filter(s => s.rated).length;
-  const totalGoodSketches = db.sketches.filter(s => s.rating === "good").length;
+  const totalRatedSketches = db.sketches.filter(s => s.rated && ratingValue(s.rating) !== null).length;
+  const totalHighRatedSketches = db.sketches.filter(s => ratingValue(s.rating) >= 4).length;
   db.successRate = totalRatedSketches > 0
-    ? parseFloat(((totalGoodSketches / totalRatedSketches) * 100).toFixed(1))
+    ? parseFloat(((totalHighRatedSketches / totalRatedSketches) * 100).toFixed(1))
     : 0;
+
+  const averageRating = ratedCount > 0
+    ? parseFloat((ratingTotal / ratedCount).toFixed(2))
+    : 0;
+  const highRatedCount = ratingCounts[4] + ratingCounts[5];
+  const lowRatedCount = ratingCounts[1] + ratingCounts[2];
 
   db.statistics.generations.push({
     generation,
-    goodCount,
-    badCount,
+    ratingCounts,
+    averageRating,
+    highRatedCount,
+    lowRatedCount,
+    neutralCount: ratingCounts[3],
+    goodCount: highRatedCount,
+    badCount: lowRatedCount,
     curatorSource,
-    successRate: goodCount + badCount > 0
-      ? parseFloat(((goodCount / (goodCount + badCount)) * 100).toFixed(1))
+    successRate: ratedCount > 0
+      ? parseFloat(((highRatedCount / ratedCount) * 100).toFixed(1))
       : 0,
     timestamp: new Date().toISOString()
   });
 
   const tagCounts = {};
   db.sketches.forEach(s => {
-    if (s.rating === "good") {
+    if (ratingValue(s.rating) >= 4) {
       normalizeDna(s.dna).forEach(tag => {
         tagCounts[tag] = (tagCounts[tag] || 0) + 1;
       });
@@ -590,26 +741,115 @@ function recordRatingsAndPersist(db, generation, ratings, newSketches, curatorSo
     .sort((a, b) => b.count - a.count)
     .slice(0, 10);
 
-  return { goodCount, badCount };
+  const ratedSketches = db.sketches.filter(s => s.generation === generation && s.rated);
+  ratedSketches.forEach(sketch => {
+    (sketch.learningContext?.exampleIds || []).forEach(exampleId => {
+      const example = db.sketches.find(item => item.id === exampleId);
+      if (example) example.learningUseCount = (example.learningUseCount || 0) + 1;
+    });
+  });
+
+  return {
+    ratingCounts,
+    averageRating,
+    ratedCount,
+    highRatedCount,
+    lowRatedCount,
+    neutralCount: ratingCounts[3]
+  };
 }
 
-async function evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion) {
+function normalizeCompileResult(result) {
+  if (!result || typeof result.success !== "boolean") {
+    return { success: null, error: null, reportedAt: null };
+  }
+  return {
+    success: result.success,
+    error: result.error ? String(result.error).slice(0, 1000) : null,
+    reportedAt: result.reportedAt || new Date().toISOString()
+  };
+}
+
+async function critiqueRatedSketches(db, generation) {
+  const sketches = db.sketches.filter(s => s.generation === generation && s.rated);
+  if (!sketches.length) return;
+
+  const systemPrompt = `You analyze a rated batch of WebGL 1.0 fragment shaders.
+For each shader, identify concise visual and code-level lessons. Ratings use a 1–5 scale; respect the human rating and do not change it.
+Return valid JSON only:
+{
+  "critiques": [
+    {
+      "id": "sketch id",
+      "strengths": ["short observation"],
+      "weaknesses": ["short observation"],
+      "reusablePatterns": ["specific reusable technique"],
+      "avoidPatterns": ["specific pattern to avoid"]
+    }
+  ]
+}`;
+
+  const critiqueInput = sketches.map(sketch => ({
+    id: sketch.id,
+    title: sketch.title,
+    rating: sketch.rating,
+    ratingSource: sketch.ratingSource,
+    compile: sketch.compile,
+    dna: sketch.dna,
+    hypothesis: sketch.hypothesis,
+    glsl: String(sketch.glsl || "").slice(0, 2500)
+  }));
+
+  try {
+    const raw = await runInference(
+      systemPrompt,
+      `Critique these shaders:\n${JSON.stringify(critiqueInput, null, 2)}`,
+      {
+        task: "curation",
+        jsonMode: true,
+        retriesPerModel: 2,
+        label: `learning critique gen ${generation}`
+      }
+    );
+    const parsed = parseJsonFromModel(raw);
+    const critiques = Array.isArray(parsed) ? parsed : parsed.critiques;
+    if (!Array.isArray(critiques)) return;
+
+    critiques.forEach(critique => {
+      const sketch = db.sketches.find(item => item.id === critique.id);
+      if (!sketch) return;
+      sketch.critique = {
+        strengths: stringList(critique.strengths),
+        weaknesses: stringList(critique.weaknesses),
+        reusablePatterns: stringList(critique.reusablePatterns),
+        avoidPatterns: stringList(critique.avoidPatterns)
+      };
+    });
+  } catch (err) {
+    console.warn(`Learning critique skipped for generation ${generation}: ${err.message}`);
+  }
+}
+
+function stringList(value) {
+  return Array.isArray(value) ? value.map(String).map(item => item.trim()).filter(Boolean).slice(0, 5) : [];
+}
+
+async function evolveStrategyInternal(db, generation, ratingSummary, userOpinion) {
   const prevStrategy = db.currentStrategy;
-  const successRateThisGen = (goodCount / (goodCount + badCount)) * 100 || 0;
 
   const evolutionSystemPrompt = `You are "ShaderMind", a self-reflecting generative artist agent.
 Your task is to analyze feedback from your last generation of sketches, evaluate your strategy, extract updated mathematical heuristics, and output an evolved strategy guidelines document.
 
-Analyze the ratio of Good vs Bad pieces. Synthesize curator opinions.
+Analyze the full 1–5 rating distribution. A score of 3 is neutral evidence, while 4–5 indicates preference and 1–2 indicates rejection. Synthesize curator opinions.
 Rewrite your "Shader Generation Strategy" to align with demonstrated taste while maintaining artistic integrity.
 
 Your response MUST be a valid JSON object. Do not write markdown blocks:
 {
   "analysis": "string detailing your self-criticism and artistic growth",
   "heuristics": [
-    "string with explicit math rule AND estimated approval rate, e.g. 'Radial symmetry + slow motion → 78% approval rate'",
-    "string heuristic #2 with approval context",
-    "string heuristic #3 with approval context"
+    "specific mathematical or visual rule supported by the supplied evidence",
+    "second concise rule",
+    "third concise rule"
   ],
   "evolvedStrategy": "string containing the full updated prompt/strategy rules for writing next GLSL fragment shaders"
 }`;
@@ -618,13 +858,18 @@ Your response MUST be a valid JSON object. Do not write markdown blocks:
 ${prevStrategy}
 
 Last Generation (#${generation}) Performance:
-- Good pieces: ${goodCount}
-- Bad pieces: ${badCount}
-- Success rate this gen: ${successRateThisGen.toFixed(1)}%
+- Rating counts: ${JSON.stringify(ratingSummary.ratingCounts)}
+- Average rating: ${ratingSummary.averageRating}/5
+- High-rated (4–5): ${ratingSummary.highRatedCount}
+- Neutral (3): ${ratingSummary.neutralCount}
+- Low-rated (1–2): ${ratingSummary.lowRatedCount}
 
 Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 
-Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. Then output your updated generation strategy guidelines.`;
+Evidence-backed preference memory:
+${buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)}
+
+Use the evidence counts above rather than inventing approval rates. Then output your updated generation strategy guidelines.`;
 
   try {
     const rawResponse = await runInference(evolutionSystemPrompt, evolutionUserPrompt, {
@@ -671,14 +916,14 @@ Extract 2 to 3 updated learned mathematical rules with approval-rate estimates. 
 
 async function autoCurateBatch(sketches, db) {
   const systemPrompt = `You are ShaderMind's autonomous aesthetic curator.
-Rate each shader "good" or "bad" against the active strategy and learned heuristics.
-Be selective: approve roughly 30-40% to maintain quality pressure.
+Rate each shader from 1 to 5 against the active strategy and learned heuristics.
+Use 1 for a strong rejection, 3 for neutral/mixed, and 5 for exceptional work.
 Favor organic motion, valid GLSL structure, and heuristic alignment.
 Reject chaotic high-frequency noise, rigid grids, and oversaturated palettes.
 
 Respond with valid JSON only:
 {
-  "ratings": { "sketch-id": "good" | "bad", ... },
+  "ratings": { "sketch-id": 1 | 2 | 3 | 4 | 5, ... },
   "opinion": "One paragraph summarizing what you approved, rejected, and what to evolve next."
 }`;
 
@@ -700,7 +945,7 @@ ${JSON.stringify(db.heuristics || [])}
 Sketches to curate:
 ${JSON.stringify(sketchSummaries, null, 2)}
 
-Rate every sketch id. Include all 10 ids in ratings.`;
+Rate every sketch id from 1 to 5. Include every id in ratings.`;
 
   const rawResponse = await runInference(systemPrompt, userPrompt, {
     task: "curation",
@@ -712,7 +957,7 @@ Rate every sketch id. Include all 10 ids in ratings.`;
 
   const ratings = {};
   sketches.forEach(s => {
-    ratings[s.id] = parsed.ratings?.[s.id] === "good" ? "good" : "bad";
+    ratings[s.id] = ratingValue(parsed.ratings?.[s.id]) || 3;
   });
 
   return {
@@ -757,24 +1002,49 @@ function applyThumbnailsToSketches(sketches, thumbnails) {
   }
 }
 
-function applyFeedbackRatings(db, generation, ratings, sketches, curatorSource) {
-  const { goodCount, badCount } = recordRatingsAndPersist(db, generation, ratings, sketches, curatorSource);
+function applyFeedbackRatings(
+  db,
+  generation,
+  ratings,
+  sketches,
+  curatorSource,
+  explicitRatingIds,
+  compileResults
+) {
+  const ratingSummary = recordRatingsAndPersist(
+    db,
+    generation,
+    ratings,
+    sketches,
+    explicitRatingIds,
+    compileResults,
+    curatorSource
+  );
 
   if (autopilot.currentBatch) {
     autopilot.currentBatch = autopilot.currentBatch.map(s => ({
       ...s,
       rated: true,
-      rating: ratings[s.id] || s.rating
+      rating: ratingValue(ratings[s.id]) ?? s.rating,
+      ratingSource: (Array.isArray(explicitRatingIds) ? explicitRatingIds : []).includes(s.id)
+        ? "explicit"
+        : "defaulted",
+      compile: normalizeCompileResult(compileResults?.[s.id] || s.compile)
     }));
   }
 
-  return { goodCount, badCount };
+  return ratingSummary;
 }
 
-async function runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource) {
+async function runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource) {
   db._pendingCuratorSource = curatorSource;
   try {
-    const evolution = await evolveStrategyInternal(db, generation, goodCount, badCount, userOpinion);
+    await critiqueRatedSketches(db, generation);
+    db.preferenceMemory = buildPreferenceMemory(
+      db.sketches,
+      db.preferenceMemory || EMPTY_PREFERENCE_MEMORY
+    );
+    const evolution = await evolveStrategyInternal(db, generation, ratingSummary, userOpinion);
     await maybeConsolidateMemory(db);
     await saveDB(db);
     return evolution;
@@ -783,11 +1053,13 @@ async function runEvolutionPipeline(db, generation, goodCount, badCount, userOpi
   }
 }
 
-function scheduleEvolution(db, generation, goodCount, badCount, userOpinion, curatorSource) {
-  runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource)
-    .then(evolution => {
-      console.log(`[Evolution] Gen #${generation} strategy updated (${goodCount} good, ${badCount} bad)`);
-      return evolution;
+function scheduleEvolution(db, generation, ratingSummary, userOpinion, curatorSource) {
+  runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource)
+    .then(() => {
+      console.log(
+        `[Evolution] Gen #${generation} strategy updated ` +
+        `(${ratingSummary.highRatedCount} high, ${ratingSummary.lowRatedCount} low)`
+      );
     })
     .catch(err => {
       console.error(`[Evolution] Gen #${generation} failed:`, err.message);
@@ -795,30 +1067,49 @@ function scheduleEvolution(db, generation, goodCount, badCount, userOpinion, cur
     });
 }
 
-async function processFeedbackAndEvolve(db, generation, ratings, sketches, userOpinion, curatorSource) {
+async function processFeedbackAndEvolve(
+  db,
+  generation,
+  ratings,
+  sketches,
+  userOpinion,
+  curatorSource,
+  { explicitRatingIds = [], compileResults = {}, thumbnails = null } = {}
+) {
   db.learningMode = LEARNING_MODE;
 
-  const { goodCount, badCount } = applyFeedbackRatings(db, generation, ratings, sketches, curatorSource);
+  if (thumbnails && sketches?.length) {
+    applyThumbnailsToSketches(sketches, thumbnails);
+  }
+
+  const ratingSummary = applyFeedbackRatings(
+    db,
+    generation,
+    ratings,
+    sketches,
+    curatorSource,
+    explicitRatingIds,
+    compileResults
+  );
   if (userOpinion) db.lastHumanOpinion = userOpinion;
   await clearPendingStudio(db);
   await saveDB(db);
 
   if (EVOLUTION_ASYNC) {
-    scheduleEvolution(db, generation, goodCount, badCount, userOpinion, curatorSource);
+    scheduleEvolution(db, generation, ratingSummary, userOpinion, curatorSource);
     return {
       evolution: {
         analysis: "Ratings saved. Strategy evolution running in background while the next batch generates.",
         heuristics: db.heuristics || [],
         evolvedStrategy: db.currentStrategy
       },
-      goodCount,
-      badCount,
+      ratingSummary,
       evolutionPending: true
     };
   }
 
-  const evolution = await runEvolutionPipeline(db, generation, goodCount, badCount, userOpinion, curatorSource);
-  return { evolution, goodCount, badCount, evolutionPending: false };
+  const evolution = await runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource);
+  return { evolution, ratingSummary, evolutionPending: false };
 }
 
 async function waitForHumanOrTimeout() {
@@ -940,6 +1231,8 @@ app.get("/api/state", async (req, res) => {
       generationCount: db.generationCount,
       successRate: db.successRate,
       heuristics: db.heuristics || [],
+      preferenceMemory: db.preferenceMemory || EMPTY_PREFERENCE_MEMORY,
+      codeAwareLearning: CODE_AWARE_LEARNING,
       currentStrategy: db.currentStrategy,
       strategyTimeline: db.strategyTimeline,
       statistics: db.statistics,
@@ -1132,6 +1425,18 @@ app.post("/api/generate", async (req, res) => {
   }
 });
 
+app.post("/api/sketches/:id/compile-result", (req, res) => {
+  const compile = normalizeCompileResult(req.body);
+  if (compile.success === null) {
+    return res.status(400).json({ error: "Compile result requires a boolean success value." });
+  }
+
+  const sketch = autopilot.currentBatch?.find(item => item.id === req.params.id);
+  if (sketch) sketch.compile = compile;
+
+  res.status(202).json({ success: true });
+});
+
 app.post("/api/sketches/thumbnail", async (req, res) => {
   const { id, thumbnail } = req.body || {};
   if (!id || !isValidThumbnail(thumbnail)) {
@@ -1154,26 +1459,40 @@ app.post("/api/sketches/thumbnail", async (req, res) => {
 
 app.post("/api/feedback", async (req, res) => {
   const db = await loadDB();
-  const { generation, ratings, userOpinion, newSketches, thumbnails } = req.body;
+  const {
+    generation,
+    ratings,
+    userOpinion,
+    newSketches,
+    thumbnails,
+    explicitRatingIds,
+    compileResults
+  } = req.body;
 
   if (!generation || !ratings) {
     return res.status(400).json({ error: "Missing generation or ratings." });
   }
 
-  if (newSketches?.length) {
-    applyThumbnailsToSketches(newSketches, thumbnails);
+  const expectedSketches = Array.isArray(newSketches) && newSketches.length
+    ? newSketches
+    : (autopilot.currentBatch || []);
+  const missingRating = expectedSketches.find(sketch => ratingValue(ratings[sketch.id]) === null);
+  const invalidRating = Object.values(ratings).find(rating => ratingValue(rating) === null);
+  if (missingRating || invalidRating !== undefined) {
+    return res.status(400).json({ error: "Every shader must have a rating from 1 to 5." });
   }
 
   autopilot.lastHumanOpinion = userOpinion || null;
 
   try {
-    const { evolution, goodCount, badCount, evolutionPending } = await processFeedbackAndEvolve(
+    const { evolution, ratingSummary, evolutionPending } = await processFeedbackAndEvolve(
       db,
       generation,
       ratings,
       newSketches,
       userOpinion,
-      "human"
+      "human",
+      { explicitRatingIds, compileResults, thumbnails }
     );
 
     releaseHumanGate();
@@ -1189,8 +1508,10 @@ app.post("/api/feedback", async (req, res) => {
       evolutionPending,
       successRate: db.successRate,
       totalSketches: db.totalSketches,
-      goodCount,
-      badCount
+      preferenceMemory: db.preferenceMemory,
+      ...ratingSummary,
+      goodCount: ratingSummary.highRatedCount,
+      badCount: ratingSummary.lowRatedCount
     });
   } catch (err) {
     await saveDB(db);
@@ -1210,8 +1531,8 @@ app.get("/api/narrative", async (req, res) => {
   }
 
   const goodSketchesList = db.sketches
-    .filter(s => s.rating === "good")
-    .map(s => `Gen ${s.generation}: "${s.title}" (${s.dna.join(", ")})`)
+    .filter(s => ratingValue(s.rating) >= 4)
+    .map(s => `Gen ${s.generation}: "${s.title}" — ${ratingValue(s.rating)}/5 (${s.dna.join(", ")})`)
     .slice(-10);
 
   const narrativeSystemPrompt = `You are "ShaderMind", a self-reflecting AI creative coder professor.
@@ -1274,7 +1595,7 @@ app.listen(PORT, "0.0.0.0", async () => {
   }
   console.log(`Generation: mode=${GENERATION_MODE}, batch=${ai.batchSize}, glsl concurrency=${ai.glslConcurrency}, remix=${REMIX_MUTATION}`);
   console.log(`Loop: autopilot delay=${AUTOPILOT_INTERVAL_MS}ms, evolution async=${EVOLUTION_ASYNC}`);
-  console.log(`Learning: mode=${LEARNING_MODE}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
+  console.log(`Learning: mode=${LEARNING_MODE}, code-aware=${CODE_AWARE_LEARNING}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
   if (AUTOPILOT_ENABLED) {
     const db = await loadDB();

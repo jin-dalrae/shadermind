@@ -276,13 +276,13 @@ section {
   transform: translateY(-2px);
 }
 
-.shader-cell.is-good {
+.shader-cell.rating-1 { border-color: #7c4545; }
+.shader-cell.rating-2 { border-color: #806044; }
+.shader-cell.rating-3 { border-color: #666; }
+.shader-cell.rating-4 { border-color: #487d72; }
+.shader-cell.rating-5 {
   border-color: #4a9e7a;
   box-shadow: 0 0 0 1px #4a9e7a;
-}
-
-.shader-cell.is-bad {
-  border-color: #3a3a3a;
 }
 
 .shader-canvas-wrap {
@@ -316,15 +316,12 @@ section {
   pointer-events: none;
 }
 
-.rating-badge.good {
-  background: rgba(74, 158, 122, 0.9);
-  color: #fff;
-}
-
-.rating-badge.bad {
-  background: rgba(60, 60, 60, 0.85);
-  color: rgba(255,255,255,0.6);
-}
+.rating-badge.rating-1 { background: rgba(124, 69, 69, 0.92); }
+.rating-badge.rating-2 { background: rgba(128, 96, 68, 0.92); }
+.rating-badge.rating-3 { background: rgba(90, 90, 90, 0.92); }
+.rating-badge.rating-4 { background: rgba(72, 125, 114, 0.92); }
+.rating-badge.rating-5 { background: rgba(74, 158, 122, 0.92); }
+.rating-badge[class*="rating-"] { color: #fff; }
 
 .shader-error {
   display: none;
@@ -487,20 +484,17 @@ section {
 
 .btn-rate:hover { border-color: #555; color: #ddd; }
 
-.btn-rate.is-selected.good {
-  background: rgba(74, 158, 122, 0.25);
-  border-color: #4a9e7a;
-  color: #6bc49a;
-}
+.btn-rate.rate-1.is-selected { background: #7c4545; border-color: #ad6868; color: #fff; }
+.btn-rate.rate-2.is-selected { background: #806044; border-color: #b4845b; color: #fff; }
+.btn-rate.rate-3.is-selected { background: #555; border-color: #888; color: #fff; }
+.btn-rate.rate-4.is-selected { background: #487d72; border-color: #68aa9b; color: #fff; }
+.btn-rate.rate-5.is-selected { background: #376f59; border-color: #6bc49a; color: #fff; }
 
-.btn-rate.is-selected.bad {
-  background: rgba(120, 80, 80, 0.25);
-  border-color: #8a5a5a;
-  color: #c49090;
-}
-
-.shader-cell.is-good .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #4a9e7a; }
-.shader-cell.is-bad .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #4a3030; }
+.shader-cell.rating-1 .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #7c4545; }
+.shader-cell.rating-2 .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #806044; }
+.shader-cell.rating-3 .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #666; }
+.shader-cell.rating-4 .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #487d72; }
+.shader-cell.rating-5 .shader-canvas-wrap { box-shadow: inset 0 0 0 2px #4a9e7a; }
 
 /* Reflection */
 .reflection-text {

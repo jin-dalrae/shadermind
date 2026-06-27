@@ -10,6 +10,8 @@ export class ShaderRenderer {
     this.errorEl = options.errorEl || null;
     this.loadingEl = options.loadingEl || null;
     this.hintEl = options.hintEl || null;
+    this.onCompileResult = options.onCompileResult || null;
+    this.compileResultReported = false;
     this.gl = null;
     this.releaseSlot = null;
     this.program = null;
@@ -155,6 +157,7 @@ export class ShaderRenderer {
 
     if (!vertexShader || !fragmentShader) {
       this.showError(this.error || "Shader compilation failed.");
+      this.reportCompileResult(false);
       return false;
     }
 
@@ -184,6 +187,7 @@ export class ShaderRenderer {
     this.render();
     this.start();
     this.setUiState("running");
+    this.reportCompileResult(true);
     return true;
   }
 
@@ -210,6 +214,7 @@ export class ShaderRenderer {
     const source = fragmentShaderSource;
     let attempts = 0;
     const maxAttempts = 60;
+    this.compileResultReported = false;
     this.setUiState("loading");
 
     const tryCompile = async () => {
@@ -217,6 +222,9 @@ export class ShaderRenderer {
       if (await this.compile(source)) {
         this.disconnectResizeObserver();
         return true;
+      }
+      if (attempts >= maxAttempts) {
+        this.reportCompileResult(false);
       }
       return false;
     };
@@ -253,6 +261,16 @@ export class ShaderRenderer {
       this.resizeObserver.disconnect();
       this.resizeObserver = null;
     }
+  }
+
+  reportCompileResult(success) {
+    if (!this.onCompileResult || this.compileResultReported) return;
+    this.compileResultReported = true;
+    this.onCompileResult({
+      success,
+      error: success ? null : (this.error || "Shader compilation failed."),
+      reportedAt: new Date().toISOString()
+    });
   }
 
   compileShader(type, source) {

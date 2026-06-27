@@ -1,3 +1,5 @@
+import { EMPTY_PREFERENCE_MEMORY } from "../lib/learning/memory.js";
+
 export const DEFAULT_DB = {
   totalSketches: 0,
   generationCount: 0,
@@ -5,6 +7,7 @@ export const DEFAULT_DB = {
   learningMode: "human",
   lastConsolidationGen: 0,
   memoryRollups: [],
+  preferenceMemory: { ...EMPTY_PREFERENCE_MEMORY },
   currentStrategy: `Focus on fundamental machine creativity and mathematical beauty:
 1. Curves that bend and flow using harmonic waves and 2D Simplex Noise.
 2. Organic, living movement mimicking natural phenomena (like exposed candle flames in the wind).
@@ -38,6 +41,10 @@ export function mergeWithDefaults(parsed) {
       ...DEFAULT_DB.statistics,
       ...(parsed.statistics || {})
     },
-    memoryRollups: parsed.memoryRollups || []
+    memoryRollups: parsed.memoryRollups || [],
+    preferenceMemory: {
+      ...EMPTY_PREFERENCE_MEMORY,
+      ...(parsed.preferenceMemory || {})
+    }
   };
 }

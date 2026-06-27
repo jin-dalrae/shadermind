@@ -1,4 +1,5 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=10";
+import { ShaderRenderer } from "./shader-renderer.js?v=11";
+import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=5";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -24,6 +25,7 @@ class ShaderMindUI {
     this.sketches = [];
     this.activeBatch = null;
     this.userRatings = {};
+    this.compileResults = {};
     this.thumbBackfillQueue = [];
     this.thumbBackfillBusy = false;
     this.thumbBackfillSeen = new Set();
@@ -93,14 +95,14 @@ class ShaderMindUI {
   }
 
   timelineFingerprint(state) {
-    const good = this.sketches.filter(s => s.rating === "good");
+    const good = this.sketches.filter(s => this.ratingValue(s.rating) >= 4);
     const withThumb = good.filter(s => s.thumbnail).length;
     return `${state.generationCount}:${(state.strategyTimeline || []).length}:${good.length}:${withThumb}`;
   }
 
   seedThumbnailBackfill() {
     this.sketches
-      .filter(s => s.rating === "good" && !s.thumbnail)
+      .filter(s => this.ratingValue(s.rating) >= 4 && !s.thumbnail)
       .forEach(s => this.queueThumbnailBackfill(s));
   }
 
@@ -240,6 +242,7 @@ class ShaderMindUI {
       this.displayedGeneration = gen;
       this.activeBatch = batch;
       this.userRatings = {};
+      this.compileResults = {};
       this.buildGrid(batch, awaiting);
     } else {
       this.retryFailedRenderers(batch);
@@ -285,33 +288,27 @@ class ShaderMindUI {
         const actions = document.createElement("div");
         actions.className = "rate-actions";
 
-        const btnGood = document.createElement("button");
-        btnGood.type = "button";
-        btnGood.className = "btn-rate rate-good";
-        btnGood.textContent = "Good";
-        btnGood.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.rateSketch(sketch.id, "good");
+        [1, 2, 3, 4, 5].forEach(score => {
+          const button = document.createElement("button");
+          button.type = "button";
+          button.className = `btn-rate rate-${score}`;
+          button.textContent = score;
+          button.title = this.ratingLabel(score);
+          button.setAttribute("aria-label", `${score} out of 5 — ${this.ratingLabel(score)}`);
+          button.addEventListener("click", (e) => {
+            e.stopPropagation();
+            this.rateSketch(sketch.id, score);
+          });
+          actions.appendChild(button);
         });
-
-        const btnBad = document.createElement("button");
-        btnBad.type = "button";
-        btnBad.className = "btn-rate rate-bad";
-        btnBad.textContent = "Bad";
-        btnBad.addEventListener("click", (e) => {
-          e.stopPropagation();
-          this.rateSketch(sketch.id, "bad");
-        });
-
-        actions.appendChild(btnGood);
-        actions.appendChild(btnBad);
         caption.appendChild(actions);
       } else if (sketch.rating) {
+        const score = this.ratingValue(sketch.rating);
         const badge = document.createElement("span");
-        badge.className = `rating-badge ${sketch.rating}`;
-        badge.textContent = sketch.rating;
+        badge.className = `rating-badge rating-${score}`;
+        badge.textContent = `${score} / 5`;
         wrap.appendChild(badge);
-        cell.classList.add(sketch.rating === "good" ? "is-good" : "is-bad");
+        cell.classList.add(`rating-${score}`);
       }
 
       cell.appendChild(wrap);
@@ -319,76 +316,91 @@ class ShaderMindUI {
       this.els.shaderGrid.appendChild(cell);
 
       wrap.addEventListener("click", () => this.openDialog(sketch));
+      wrap.addEventListener("mousemove", (e) => {
+        const rect = wrap.getBoundingClientRect();
+        getSharedGridRenderer().setMouse(
+          (e.clientX - rect.left) / rect.width,
+          1 - (e.clientY - rect.top) / rect.height
+        );
+      });
 
-      const renderer = new ShaderRenderer(canvas);
-      this.renderers.set(sketch.id, renderer);
-      window.setTimeout(() => {
-        renderer.compileWhenReady(sketch.glsl);
-      }, index * 120);
+      getSharedGridRenderer().register(
+        sketch.id,
+        canvas,
+        sketch.glsl,
+        awaitingHuman ? result => this.reportCompileResult(sketch.id, result) : null
+      );
     });
   }
 
   retryFailedRenderers(batch) {
     batch.forEach((sketch) => {
-      const renderer = this.renderers.get(sketch.id);
-      if (!renderer) return;
-      if (!renderer.isRunning() && (renderer.needsCompile() || renderer.error)) {
-        renderer.error = null;
-        renderer.compileWhenReady(sketch.glsl);
-      }
+      getSharedGridRenderer().register(
+        sketch.id,
+        this.els.shaderGrid.querySelector(`[data-id="${sketch.id}"] canvas`),
+        sketch.glsl,
+        null
+      );
     });
+  }
+
+  reportCompileResult(sketchId, result) {
+    this.compileResults[sketchId] = result;
+
+    const sketch = this.activeBatch?.find(item => item.id === sketchId);
+    if (sketch) sketch.compile = result;
+
+    fetch(`/api/sketches/${encodeURIComponent(sketchId)}/compile-result`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(result)
+    }).catch(err => console.warn("Compile result was not reported:", err.message));
   }
 
   rateSketch(sketchId, rating) {
     this.userRatings[sketchId] = rating;
 
-    if (rating === "good") {
-      window.setTimeout(() => {
-        const thumb = this.captureThumbnailForSketch(sketchId);
-        if (!thumb) return;
+    if (rating >= 4) {
+      window.setTimeout(async () => {
         const sketch = this.activeBatch?.find(s => s.id === sketchId);
-        if (sketch) sketch.thumbnail = thumb;
+        if (!sketch || sketch.thumbnail) return;
+        const thumb = await this.renderOffscreenThumbnail(sketch);
+        if (thumb) sketch.thumbnail = thumb;
       }, 500);
     }
 
     const cell = this.els.shaderGrid.querySelector(`[data-id="${sketchId}"]`);
     if (!cell) return;
 
-    cell.classList.remove("is-good", "is-bad");
-    cell.classList.add(rating === "good" ? "is-good" : "is-bad");
+    cell.classList.remove("rating-1", "rating-2", "rating-3", "rating-4", "rating-5");
+    cell.classList.add(`rating-${rating}`);
 
     cell.querySelectorAll(".btn-rate").forEach(btn => {
       btn.classList.remove("is-selected");
     });
     const selected = cell.querySelector(`.btn-rate.rate-${rating}`);
-    if (selected) selected.classList.add("is-selected", rating);
+    if (selected) selected.classList.add("is-selected");
 
     this.updateSubmitState();
   }
 
   updateSubmitState() {
     const count = Object.keys(this.userRatings).length;
-    this.els.btnSubmitFeedback.disabled = count === 0;
-    this.els.curationHint.textContent = count === 0
-      ? "Rate at least one shader"
-      : `${count} rated — unrated will count as Bad`;
-  }
-
-  captureThumbnailForSketch(sketchId) {
-    const renderer = this.renderers.get(sketchId);
-    if (!renderer?.isRunning()) return null;
-    return renderer.captureThumbnail(64, 1.25, 0.55);
+    const total = this.activeBatch?.length || 0;
+    this.els.btnSubmitFeedback.disabled = count !== total;
+    this.els.curationHint.textContent = total
+      ? `${count} / ${total} rated · 1 low, 5 high`
+      : "Rate every shader from 1 to 5";
   }
 
   collectBatchThumbnails(batch, ratings) {
     const thumbnails = {};
     for (const sketch of batch) {
-      if (ratings[sketch.id] !== "good") continue;
-      const thumb = sketch.thumbnail || this.captureThumbnailForSketch(sketch.id);
-      if (thumb) {
-        thumbnails[sketch.id] = thumb;
-        sketch.thumbnail = thumb;
-      }
+      if (this.ratingValue(ratings[sketch.id]) < 4) continue;
+      const thumb = sketch.thumbnail || null;
+      if (!thumb) continue;
+      thumbnails[sketch.id] = thumb;
+      sketch.thumbnail = thumb;
     }
     return thumbnails;
   }
@@ -512,11 +524,7 @@ class ShaderMindUI {
 
     const gen = this.activeBatch[0].generation;
     const ratings = { ...this.userRatings };
-
-    this.activeBatch.forEach(s => {
-      if (!ratings[s.id]) ratings[s.id] = "bad";
-    });
-
+    const explicitRatingIds = Object.keys(this.userRatings);
     const thumbnails = this.collectBatchThumbnails(this.activeBatch, ratings);
 
     this.els.btnSubmitFeedback.disabled = true;
@@ -529,6 +537,8 @@ class ShaderMindUI {
         body: JSON.stringify({
           generation: gen,
           ratings,
+          explicitRatingIds,
+          compileResults: this.compileResults,
           thumbnails,
           userOpinion: this.els.userOpinion.value.trim(),
           newSketches: this.activeBatch
@@ -540,12 +550,13 @@ class ShaderMindUI {
 
       this.els.userOpinion.value = "";
       this.userRatings = {};
+      this.compileResults = {};
       this.displayedGeneration = null;
       this.displayedBatchKey = null;
       this.activeBatch = null;
       this.els.curationPanel.hidden = true;
       this.els.reflectionText.textContent = result.evolutionPending
-        ? `${result.goodCount} good · ${result.badCount} bad — next batch generating…`
+        ? `${result.highRatedCount} high · ${result.lowRatedCount} low — next batch generating…`
         : (result.analysis || "Ratings saved.");
       await this.poll();
     } catch (err) {
@@ -596,7 +607,7 @@ class ShaderMindUI {
       li.className = "timeline-item";
 
       const good = this.sketches.filter(
-        s => s.generation === entry.generation && s.rating === "good"
+        s => s.generation === entry.generation && this.ratingValue(s.rating) >= 4
       );
 
       li.innerHTML = `
@@ -715,36 +726,6 @@ class ShaderMindUI {
     this.els.shaderDialog.showModal();
 
     const dialogWrap = this.els.dialogCanvas.parentElement;
-    const gridRenderer = this.renderers.get(sketch.id);
-    const gridCell = this.els.shaderGrid.querySelector(`[data-id="${sketch.id}"]`);
-    const gridWrap = gridCell?.querySelector(".shader-canvas-wrap");
-    const gridCanvas = gridWrap?.querySelector("canvas");
-    const gridErr = gridWrap?.querySelector(".shader-error");
-
-    if (gridRenderer?.isRunning() && gridCanvas && gridWrap) {
-      this.dialogReparent = {
-        sketchId: sketch.id,
-        gridWrap,
-        gridCanvas,
-        placeholder: this.els.dialogCanvas,
-        anchor: gridErr || null,
-        renderer: gridRenderer
-      };
-      this.els.dialogCanvas.hidden = true;
-      dialogWrap.insertBefore(gridCanvas, this.els.dialogLoading);
-      gridRenderer.bindUi({
-        errorEl: this.els.dialogError,
-        loadingEl: this.els.dialogLoading,
-        hintEl: this.els.dialogHint
-      });
-      this.dialogRenderer = gridRenderer;
-      this.dialogOwnedRenderer = false;
-      this.els.dialogLoading.hidden = true;
-      this.els.dialogHint.hidden = false;
-      requestAnimationFrame(() => gridRenderer.relayout());
-      return;
-    }
-
     const glsl = sketch.glsl || "";
     this.suspendGridRenderers();
     this.waitForDialogOpen().then(() => {
@@ -776,9 +757,27 @@ class ShaderMindUI {
   }
 
   clearRenderers() {
+    getSharedGridRenderer().clearByPrefix("");
     this.renderers.forEach(r => r.destroy());
     this.renderers.clear();
     this.clearTimelineRenderers();
+  }
+
+  ratingLabel(score) {
+    return {
+      1: "strong rejection",
+      2: "weak rejection",
+      3: "neutral",
+      4: "preference",
+      5: "exceptional"
+    }[score] || "rating";
+  }
+
+  ratingValue(rating) {
+    if (rating === "good") return 5;
+    if (rating === "bad") return 1;
+    const value = Number(rating);
+    return Number.isInteger(value) && value >= 1 && value <= 5 ? value : null;
   }
 
   esc(str) {
