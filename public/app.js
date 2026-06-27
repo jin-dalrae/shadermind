@@ -1,5 +1,9 @@
 import { ShaderRenderer } from "./shader-renderer.js?v=11";
-import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=5";
+import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=6";
+
+const THUMB_SIZE = 96;
+const THUMB_TIME = 1.25;
+const THUMB_QUALITY = 0.65;
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -43,6 +47,7 @@ class ShaderMindUI {
       statusMessage: document.getElementById("statusMessage"),
       batchLabel: document.getElementById("batchLabel"),
       btnGenerateNext: document.getElementById("btnGenerateNext"),
+      btnRegenerateBatch: document.getElementById("btnRegenerateBatch"),
       shaderGrid: document.getElementById("shaderGrid"),
       emptyState: document.getElementById("emptyState"),
       curationPanel: document.getElementById("curationPanel"),
@@ -78,6 +83,7 @@ class ShaderMindUI {
     this.els.btnMonologue.addEventListener("click", () => this.fetchMonologue());
     this.els.btnSubmitFeedback.addEventListener("click", () => this.submitFeedback());
     this.els.btnGenerateNext.addEventListener("click", () => this.generateNextBatch());
+    this.els.btnRegenerateBatch?.addEventListener("click", () => this.regenerateBatch());
 
     this.poll();
     this.schedulePoll();
@@ -236,6 +242,9 @@ class ShaderMindUI {
     }
 
     this.els.curationPanel.hidden = !awaiting;
+    if (this.els.btnRegenerateBatch) {
+      this.els.btnRegenerateBatch.disabled = busy;
+    }
 
     if (batchKey !== this.displayedBatchKey) {
       this.displayedBatchKey = batchKey;
@@ -272,7 +281,7 @@ class ShaderMindUI {
       const caption = document.createElement("div");
       caption.className = "shader-caption";
       const typeClass = sketch.type || "evolutionary";
-      const hypothesis = sketch.type === "mutation" && sketch.hypothesis
+      const hypothesis = sketch.hypothesis
         ? `<p class="shader-hypothesis">${this.esc(sketch.hypothesis)}</p>`
         : "";
 
@@ -364,9 +373,9 @@ class ShaderMindUI {
       window.setTimeout(async () => {
         const sketch = this.activeBatch?.find(s => s.id === sketchId);
         if (!sketch || sketch.thumbnail) return;
-        const thumb = await this.renderOffscreenThumbnail(sketch);
+        const thumb = await this.captureSketchThumbnail(sketch);
         if (thumb) sketch.thumbnail = thumb;
-      }, 500);
+      }, 250);
     }
 
     const cell = this.els.shaderGrid.querySelector(`[data-id="${sketchId}"]`);
@@ -393,14 +402,25 @@ class ShaderMindUI {
       : "Rate every shader from 1 to 5";
   }
 
-  collectBatchThumbnails(batch, ratings) {
+  async captureSketchThumbnail(sketch) {
+    const grid = getSharedGridRenderer();
+    if (grid.hasCell(sketch.id)) {
+      const fromGrid = grid.captureCellThumbnail(sketch.id, THUMB_SIZE, THUMB_TIME, THUMB_QUALITY);
+      if (fromGrid) return fromGrid;
+    }
+    return this.renderOffscreenThumbnail(sketch);
+  }
+
+  async ensureBatchThumbnails(batch, ratings) {
     const thumbnails = {};
     for (const sketch of batch) {
       if (this.ratingValue(ratings[sketch.id]) < 4) continue;
-      const thumb = sketch.thumbnail || null;
-      if (!thumb) continue;
-      thumbnails[sketch.id] = thumb;
-      sketch.thumbnail = thumb;
+      let thumb = sketch.thumbnail || null;
+      if (!thumb) {
+        thumb = await this.captureSketchThumbnail(sketch);
+        if (thumb) sketch.thumbnail = thumb;
+      }
+      if (thumb) thumbnails[sketch.id] = thumb;
     }
     return thumbnails;
   }
@@ -419,10 +439,10 @@ class ShaderMindUI {
     while (this.thumbBackfillQueue.length) {
       const sketch = this.thumbBackfillQueue.shift();
       if (!sketch || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) continue;
-      this.thumbBackfillSeen.add(sketch.id);
 
-      const thumb = await this.renderOffscreenThumbnail(sketch);
+      const thumb = await this.captureSketchThumbnail(sketch);
       if (!thumb) continue;
+      this.thumbBackfillSeen.add(sketch.id);
 
       sketch.thumbnail = thumb;
       const local = this.sketches.find(s => s.id === sketch.id);
@@ -447,16 +467,16 @@ class ShaderMindUI {
 
   async renderOffscreenThumbnail(sketch) {
     const canvas = document.createElement("canvas");
-    canvas.width = 64;
-    canvas.height = 64;
-    canvas.style.cssText = "position:fixed;left:-9999px;width:64px;height:64px;pointer-events:none;";
+    canvas.width = THUMB_SIZE;
+    canvas.height = THUMB_SIZE;
+    canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_SIZE}px;height:${THUMB_SIZE}px;pointer-events:none;`;
     document.body.appendChild(canvas);
 
     const renderer = new ShaderRenderer(canvas);
     try {
       const ok = await renderer.compile(sketch.glsl);
       if (!ok) return null;
-      return renderer.captureThumbnail(64, 1.25, 0.55);
+      return renderer.captureThumbnail(THUMB_SIZE, THUMB_TIME, THUMB_QUALITY);
     } finally {
       renderer.destroy();
       canvas.remove();
@@ -465,8 +485,17 @@ class ShaderMindUI {
 
   refreshTimelineThumb(sketchId, thumbnail) {
     const btn = this.els.timelineList.querySelector(`[data-sketch-id="${sketchId}"]`);
-    if (!btn || btn.querySelector("img")) return;
+    if (!btn) return;
+
+    const existing = btn.querySelector("img");
+    if (existing) {
+      existing.src = thumbnail;
+      return;
+    }
+
+    btn.classList.remove("timeline-thumb-pending");
     btn.style.background = "";
+    delete btn.dataset.pending;
     const img = document.createElement("img");
     img.src = thumbnail;
     img.alt = "";
@@ -488,12 +517,38 @@ class ShaderMindUI {
       img.loading = "lazy";
       thumb.appendChild(img);
     } else {
-      thumb.style.background = this.thumbGradient(sketch);
+      thumb.classList.add("timeline-thumb-pending");
+      thumb.dataset.pending = "1";
       this.queueThumbnailBackfill(sketch);
     }
 
     thumb.addEventListener("click", () => this.openDialog(sketch));
     container.appendChild(thumb);
+  }
+
+  async regenerateBatch() {
+    const focus = this.els.userOpinion.value.trim();
+    this.els.btnRegenerateBatch.disabled = true;
+    this.els.btnRegenerateBatch.textContent = "regenerating…";
+
+    try {
+      const res = await fetch("/api/autopilot/regenerate-batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ focus: focus || undefined })
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Regenerate failed");
+      this.userRatings = {};
+      this.compileResults = {};
+      this.displayedBatchKey = null;
+      await this.poll();
+    } catch (err) {
+      alert(`Regenerate error: ${err.message}`);
+    } finally {
+      this.els.btnRegenerateBatch.disabled = false;
+      this.els.btnRegenerateBatch.textContent = "Regenerate batch";
+    }
   }
 
   async generateNextBatch() {
@@ -525,9 +580,10 @@ class ShaderMindUI {
     const gen = this.activeBatch[0].generation;
     const ratings = { ...this.userRatings };
     const explicitRatingIds = Object.keys(this.userRatings);
-    const thumbnails = this.collectBatchThumbnails(this.activeBatch, ratings);
-
     this.els.btnSubmitFeedback.disabled = true;
+    this.els.btnSubmitFeedback.textContent = "Capturing thumbnails…";
+    const thumbnails = await this.ensureBatchThumbnails(this.activeBatch, ratings);
+
     this.els.btnSubmitFeedback.textContent = "Saving…";
 
     try {
@@ -628,7 +684,7 @@ class ShaderMindUI {
 
   async fetchMonologue() {
     this.els.btnMonologue.disabled = true;
-    this.els.btnMonologue.textContent = "synthesizing…";
+    this.els.btnMonologue.textContent = "summarizing…";
     this.els.monologueOutput.hidden = true;
 
     try {
@@ -641,7 +697,7 @@ class ShaderMindUI {
       this.els.monologueOutput.hidden = false;
     } finally {
       this.els.btnMonologue.disabled = false;
-      this.els.btnMonologue.textContent = "Explain artistic evolution";
+      this.els.btnMonologue.textContent = "Summarize learning so far";
     }
   }
 
@@ -713,7 +769,10 @@ class ShaderMindUI {
     this.els.dialogTitle.textContent = sketch.title || "Untitled";
     this.els.dialogHypothesis.textContent = sketch.hypothesis || "";
     this.els.dialogHypothesis.hidden = !sketch.hypothesis;
-    this.els.dialogStatement.textContent = sketch.poetic_statement || "";
+    if (this.els.dialogStatement) {
+      this.els.dialogStatement.textContent = "";
+      this.els.dialogStatement.hidden = true;
+    }
     this.els.dialogTags.innerHTML = dna.map(t => `<span>#${this.esc(t)}</span>`).join("");
     this.els.dialogCode.textContent = sketch.glsl || "";
 
@@ -747,13 +806,6 @@ class ShaderMindUI {
   clearTimelineRenderers() {
     this.timelineRenderers.forEach(r => r.destroy());
     this.timelineRenderers = [];
-  }
-
-  thumbGradient(sketch) {
-    const seed = [...(sketch.id || "sketch")].reduce((n, c) => n + c.charCodeAt(0), 0);
-    const h1 = seed % 360;
-    const h2 = (h1 + 47) % 360;
-    return `linear-gradient(135deg, hsl(${h1}, 42%, 28%), hsl(${h2}, 55%, 52%))`;
   }
 
   clearRenderers() {

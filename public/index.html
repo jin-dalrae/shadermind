@@ -57,6 +57,7 @@
         <textarea id="userOpinion" placeholder="e.g. Slower motion, warmer ambers, less grid noise, more liquid flow…"></textarea>
         <div class="curation-actions">
           <span class="curation-hint" id="curationHint">Rate every shader from 1 to 5</span>
+          <button type="button" class="btn-regenerate" id="btnRegenerateBatch">Regenerate batch</button>
           <button type="button" class="btn-submit" id="btnSubmitFeedback" disabled>Submit &amp; next batch</button>
         </div>
       </div>
@@ -65,10 +66,10 @@
     <div class="content-wrap">
     <section class="reflection" id="sectionReflection">
       <div class="section-head">
-        <h2>Latest reflection</h2>
+        <h2>Latest notes</h2>
       </div>
       <blockquote class="reflection-text" id="reflectionText">
-        The mind is initializing its first generation cycle.
+        Waiting for the first batch.
       </blockquote>
       <details class="strategy-details">
         <summary>Active strategy genome</summary>
@@ -93,7 +94,7 @@
       <ul class="heuristics-list" id="heuristicsList"></ul>
 
       <div class="monologue-block">
-        <button type="button" class="btn-text" id="btnMonologue">Explain artistic evolution</button>
+        <button type="button" class="btn-text" id="btnMonologue">Summarize learning so far</button>
         <div class="monologue-output" id="monologueOutput" hidden>
           <p id="monologueText"></p>
         </div>
@@ -122,7 +123,7 @@
         <p class="dialog-eyebrow" id="dialogEyebrow"></p>
         <h3 id="dialogTitle"></h3>
         <p class="dialog-hypothesis" id="dialogHypothesis"></p>
-        <p class="dialog-statement" id="dialogStatement"></p>
+        <p class="dialog-statement" id="dialogStatement" hidden></p>
         <div class="dialog-tags" id="dialogTags"></div>
         <details class="dialog-source-details">
           <summary>GLSL source</summary>
@@ -132,6 +133,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?v=11"></script>
+  <script type="module" src="app.js?v=14"></script>
 </body>
 </html>

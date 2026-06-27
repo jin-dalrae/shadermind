@@ -222,7 +222,7 @@ class SharedGridRenderer {
     this.mouseY = y;
   }
 
-  blitGlTo2d(ctx2d, w, h) {
+  blitGlToSnap() {
     const gl = this.gl;
     gl.readPixels(0, 0, RENDER_SIZE, RENDER_SIZE, gl.RGBA, gl.UNSIGNED_BYTE, this.pixelScratch);
 
@@ -236,8 +236,70 @@ class SharedGridRenderer {
     }
 
     this.snapCtx.putImageData(this.imageData, 0, 0);
+  }
+
+  blitGlTo2d(ctx2d, w, h) {
+    this.blitGlToSnap();
     ctx2d.clearRect(0, 0, w, h);
     ctx2d.drawImage(this.snapCanvas, 0, 0, w, h);
+  }
+
+  hasCell(id) {
+    return this.cells.has(id);
+  }
+
+  drawCellFrame(id, time, resolutionW, resolutionH) {
+    const gl = this.gl;
+    const cell = this.cells.get(id);
+    if (!gl || !cell) return null;
+
+    if (gl.isContextLost()) {
+      this.initGl();
+      if (!this.gl) return null;
+    }
+
+    const entry = this.ensureProgram(id, cell.glsl);
+    if (!entry.program) return entry;
+
+    gl.viewport(0, 0, RENDER_SIZE, RENDER_SIZE);
+    gl.useProgram(entry.program);
+
+    const positionLocation = gl.getAttribLocation(entry.program, "position");
+    gl.enableVertexAttribArray(positionLocation);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
+    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
+
+    const timeLoc = gl.getUniformLocation(entry.program, "u_time");
+    if (timeLoc !== null) gl.uniform1f(timeLoc, time);
+
+    const resLoc = gl.getUniformLocation(entry.program, "u_resolution");
+    if (resLoc !== null) gl.uniform2f(resLoc, resolutionW, resolutionH);
+
+    const mouseLoc = gl.getUniformLocation(entry.program, "u_mouse");
+    if (mouseLoc !== null) gl.uniform2f(mouseLoc, this.mouseX, this.mouseY);
+
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    return entry;
+  }
+
+  captureCellThumbnail(id, size = 96, time = 1.25, quality = 0.65) {
+    const entry = this.drawCellFrame(id, time, RENDER_SIZE, RENDER_SIZE);
+    if (!entry?.program) return null;
+
+    try {
+      this.blitGlToSnap();
+      const thumbCanvas = document.createElement("canvas");
+      thumbCanvas.width = size;
+      thumbCanvas.height = size;
+      const ctx = thumbCanvas.getContext("2d");
+      if (!ctx) return null;
+      ctx.drawImage(this.snapCanvas, 0, 0, size, size);
+      const dataUrl = thumbCanvas.toDataURL("image/jpeg", quality);
+      return dataUrl && dataUrl.length > 100 ? dataUrl : null;
+    } catch (err) {
+      console.warn("SharedGridRenderer: captureCellThumbnail failed", err);
+      return null;
+    }
   }
 
   paintCell(id) {
@@ -261,10 +323,11 @@ class SharedGridRenderer {
     }
 
     const ctx2d = cell.ctx2d;
-    const entry = this.ensureProgram(id, cell.glsl);
+    const time = (Date.now() - this.startTime) / 1000;
+    const entry = this.drawCellFrame(id, time, w, h);
 
     if (cell.errEl) {
-      if (entry.error) {
+      if (entry?.error) {
         cell.errEl.textContent = `Fragment Shader Compile Error:\n${entry.error}`;
         cell.errEl.classList.add("active");
       } else {
@@ -273,31 +336,12 @@ class SharedGridRenderer {
       }
     }
 
-    if (!entry.program) {
+    if (!entry?.program) {
       ctx2d.fillStyle = "#1a0808";
       ctx2d.fillRect(0, 0, w, h);
       return;
     }
 
-    gl.viewport(0, 0, RENDER_SIZE, RENDER_SIZE);
-    gl.useProgram(entry.program);
-
-    const positionLocation = gl.getAttribLocation(entry.program, "position");
-    gl.enableVertexAttribArray(positionLocation);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.buffer);
-    gl.vertexAttribPointer(positionLocation, 2, gl.FLOAT, false, 0, 0);
-
-    const time = (Date.now() - this.startTime) / 1000;
-    const timeLoc = gl.getUniformLocation(entry.program, "u_time");
-    if (timeLoc !== null) gl.uniform1f(timeLoc, time);
-
-    const resLoc = gl.getUniformLocation(entry.program, "u_resolution");
-    if (resLoc !== null) gl.uniform2f(resLoc, w, h);
-
-    const mouseLoc = gl.getUniformLocation(entry.program, "u_mouse");
-    if (mouseLoc !== null) gl.uniform2f(mouseLoc, this.mouseX, this.mouseY);
-
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
     this.blitGlTo2d(ctx2d, w, h);
   }
 

@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { loadDB, saveDB, createStorage } from "./storage/index.js";
+import { loadDB, saveDB, createStorage, getStorageMode } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
 import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig, getTaskModels } from "./lib/ai.js";
 import { parseJsonFromModel } from "./lib/json.js";
@@ -96,6 +96,14 @@ function getBatchDistribution(size = BATCH_SIZE) {
     directive,
     mutation: mutation + (size - total)
   };
+}
+
+function buildGlslRepairHint(reason) {
+  if (!reason) return "";
+  if (/low-effort|circle|blob/i.test(reason)) {
+    return " [REJECTED: lazy pulsing circle on black — rewrite with full-frame ripples, hash noise, FBM, polar UV, or domain warp. No smoothstep circle masks.]";
+  }
+  return ` [Fix: ${reason}]`;
 }
 
 function sketchTypeForIndex(index, size = BATCH_SIZE) {
@@ -271,15 +279,15 @@ async function generateBatchFast(db, userFocus, genNum) {
     : "";
 
   const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
-You draw; the curator is the artist. Learn their taste. Lieberman spirit: everyday sketches, change a bit from the last high-rated one — don't reinvent from scratch.
+You draw; the curator rates 1–5. Learn from ratings — small changes from last high-rated work, not full reinventions.
 
 Return a JSON array of exactly ${BATCH_SIZE} objects. Each object MUST have:
-- "title": short poetic title
+- "title": 2–4 word label (e.g. "Ripple Noise Field") — not poetic
 - "type": "evolutionary" | "directive" | "mutation"
-- "hypothesis": one-line visual/math idea
+- "hypothesis": one factual line, max 15 words — what the shader computes (techniques, motion, palette). No metaphor.
 - "dna": array of 3-5 math/visual tags
 - "glsl": full shader source as a JSON string (use \\n for newlines — NOT base64, NOT markdown fences)
-- "poetic_statement": one sentence
+- "poetic_statement": "" (always empty — curator judges by rendering)
 
 Distribution: ${evolutionary} evolutionary, ${directive} directive, ${mutation} mutation.
 
@@ -329,7 +337,7 @@ Output raw JSON array only.`;
       hypothesis: "Safe fallback pattern.",
       dna: ["fallback", "waves"],
       glsl: FALLBACK_GLSL[items.length % FALLBACK_GLSL.length],
-      poetic_statement: "A safe fallback while the model recovers."
+      poetic_statement: ""
     });
   }
 
@@ -341,11 +349,18 @@ Output raw JSON array only.`;
       let validation = validateGlsl(glsl);
 
       if (!validation.valid) {
-        try {
-          glsl = await generateGlslForSketch(m, db, userFocus, genNum, idx);
-          validation = validateGlsl(glsl);
-        } catch (err) {
-          console.warn(`Fast batch #${idx + 1} repair failed:`, err.message);
+        for (let repair = 0; repair < 2; repair++) {
+          try {
+            const repairMeta = {
+              ...m,
+              hypothesis: `${m.hypothesis || "Visual study."}${buildGlslRepairHint(validation.reason)}`
+            };
+            glsl = await generateGlslForSketch(repairMeta, db, userFocus, genNum, idx);
+            validation = validateGlsl(glsl);
+            if (validation.valid) break;
+          } catch (err) {
+            console.warn(`Fast batch #${idx + 1} repair ${repair + 1} failed:`, err.message);
+          }
         }
       }
 
@@ -365,9 +380,9 @@ Output raw JSON array only.`;
     id: `sketch-gen${genNum}-${idx + 1}`,
     title: m.title || `Untitled Sketch #${idx + 1}`,
     type: m.type || sketchTypeForIndex(idx),
-    hypothesis: m.hypothesis || "Aesthetic study.",
+    hypothesis: m.hypothesis || "Full-frame shader pattern.",
     glsl,
-    poetic_statement: m.poetic_statement || "A study in computational expression.",
+    poetic_statement: "",
     generation: genNum,
     rated: false,
     rating: null,
@@ -386,8 +401,9 @@ async function generateMetadataBatch(db, userFocus, genNum) {
     : [];
   const exampleDescriptions = buildExampleDescriptions(examples);
   const systemPrompt = `You are ShaderMind planning ${BATCH_SIZE} shader sketches (metadata only, NO GLSL code).
-Zach Lieberman's daily practice: don't make something new — change one thing each day. Plan small mutations and remixes, not full reinventions.
-Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, poetic_statement, dna.
+Change one thing from prior high-rated work when evolutionary — small steps, not reinventions.
+Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, dna.
+title: 2–4 word label, not poetic. hypothesis: one factual line (max 15 words) — what the code will do. No metaphor.
 Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis names ONE tweak to remix from a good parent), ${evolutionary}-${evolutionary + directive - 1} "directive", ${evolutionary + directive}-${BATCH_SIZE - 1} "mutation".
 Strategy: ${db.currentStrategy}
 Heuristics: ${(db.heuristics || []).join("; ")}
@@ -480,6 +496,8 @@ Rules:
 - Prefer simple hash/noise over permute/snoise unless you include full Ashima helpers
 - Use float loops; max 6 iterations
 - Keep shaders under 60 lines; must compile in WebGL 1.0
+FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
+REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, or mouse-reactive flow.
 ${MATH_COOKBOOK}
 Strategy: ${db.currentStrategy}${rollupHint}
 ${preferenceSummary}`;
@@ -502,8 +520,8 @@ Write a complete, valid fragment shader.`;
 
   for (let attempt = 0; attempt < GLSL_MAX_ATTEMPTS; attempt++) {
     try {
-      const prompt = attempt > 0 && CODE_AWARE_LEARNING
-        ? `${userPrompt}\n\nPrevious attempt failed validation. Rewrite with a different structure while keeping the hypothesis.`
+      const prompt = attempt > 0
+        ? `${userPrompt}\n\nPrevious attempt failed validation${lastError?.message ? `: ${lastError.message}` : ""}. Rewrite with a different structure while keeping the hypothesis.${buildGlslRepairHint(lastError?.message)}`
         : userPrompt;
       const raw = await runInference(systemPrompt, prompt, {
         task: "glsl",
@@ -615,9 +633,9 @@ async function generateBatchInternal(db, userFocus) {
       id: `sketch-gen${genNum}-${idx + 1}`,
       title: m.title || `Untitled Sketch #${idx + 1}`,
       type: m.type || sketchTypeForIndex(idx),
-      hypothesis: m.hypothesis || "Aesthetic study.",
+      hypothesis: m.hypothesis || "Full-frame shader pattern.",
       glsl: decodeGlslField(generated.glsl),
-      poetic_statement: m.poetic_statement || "A study in computational expression.",
+      poetic_statement: "",
       generation: genNum,
       rated: false,
       rating: null,
@@ -846,7 +864,7 @@ Rewrite your "Shader Generation Strategy" to align with demonstrated taste while
 
 Your response MUST be a valid JSON object. Do not write markdown blocks:
 {
-  "analysis": "string detailing your self-criticism and artistic growth",
+  "analysis": "1–3 short factual sentences: what you tried, what the ratings showed, what to try next. No metaphor or poetry.",
   "heuristics": [
     "specific mathematical or visual rule supported by the supplied evidence",
     "second concise rule",
@@ -1223,11 +1241,30 @@ function stopAutopilot() {
 // API ROUTES
 // ==========================================
 
+app.get("/api/health", async (req, res) => {
+  try {
+    const db = await loadDB();
+    res.json({
+      ok: true,
+      app: "shadermind",
+      storage: getStorageMode(),
+      mongoConfigured: Boolean(process.env.MONGODB_URI),
+      ratingScale: "1-5",
+      generationCount: db.generationCount,
+      totalSketches: db.totalSketches
+    });
+  } catch (err) {
+    res.status(500).json({ ok: false, error: err.message, storage: getStorageMode() });
+  }
+});
+
 app.get("/api/state", async (req, res) => {
   try {
     const db = await loadDB();
     const rollup = await createStorage().getLatestRollup();
     res.json({
+      storage: getStorageMode(),
+      ratingScale: "1-5",
       totalSketches: db.totalSketches,
       generationCount: db.generationCount,
       successRate: db.successRate,
@@ -1336,9 +1373,60 @@ app.post("/api/autopilot/kick", (req, res) => {
   res.json({ success: true, phase: autopilot.phase, running: autopilot.running });
 });
 
+app.post("/api/autopilot/regenerate-batch", async (req, res) => {
+  if (autopilot.phase !== "awaiting_human" || !autopilot.currentBatch?.length) {
+    return res.status(409).json({ error: "No batch awaiting curation." });
+  }
+  if (autopilot._regenerating || autopilot.phase === "generating") {
+    return res.status(409).json({ error: "Already generating." });
+  }
+
+  const focus = req.body?.focus?.trim();
+  if (focus) {
+    autopilot.lastHumanOpinion = focus;
+    try {
+      const db = await loadDB();
+      db.lastHumanOpinion = focus;
+      await saveDB(db);
+    } catch (err) {
+      console.warn("[Autopilot] Could not persist focus:", err.message);
+    }
+  }
+
+  autopilot._regenerating = true;
+  autopilot.phase = "generating";
+  autopilot.generationProgress = "regenerating batch";
+  autopilot.lastError = null;
+
+  try {
+    const db = await loadDB();
+    await clearPendingStudio(db);
+    const resolvedFocus = focus
+      || autopilot.lastHumanOpinion
+      || db.lastHumanOpinion
+      || db.heuristics?.[0]
+      || "Organic flow, slow liquid motion, warm amber gradients like candle flames in wind";
+    const { generation, sketches } = await generateBatchInternal(db, resolvedFocus);
+    autopilot.currentBatch = sketches.map(s => ({ ...s, rated: false, rating: null }));
+    autopilot.currentGeneration = generation;
+    autopilot.phase = "awaiting_human";
+    await savePendingStudio(db);
+    console.log(`[Autopilot] Regenerated Gen #${generation} (${sketches.length} shaders)`);
+    res.json({ success: true, generation, count: sketches.length });
+  } catch (err) {
+    autopilot.phase = "awaiting_human";
+    autopilot.lastError = err.message;
+    console.error("[Autopilot] Regenerate failed:", err.message);
+    res.status(500).json({ error: err.message });
+  } finally {
+    autopilot._regenerating = false;
+    autopilot.generationProgress = null;
+  }
+});
+
 app.post("/api/autopilot/generate-next", async (req, res) => {
   if (autopilot.phase === "awaiting_human") {
-    return res.status(409).json({ error: "Rate the current batch first." });
+    return res.status(409).json({ error: "Rate the current batch first, or use Regenerate batch." });
   }
   if (autopilot.phase === "generating") {
     return res.status(409).json({ error: "Already generating." });
@@ -1536,8 +1624,8 @@ app.get("/api/narrative", async (req, res) => {
     .map(s => `Gen ${s.generation}: "${s.title}" — ${ratingValue(s.rating)}/5 (${s.dna.join(", ")})`)
     .slice(-10);
 
-  const narrativeSystemPrompt = `You are "ShaderMind", a self-reflecting AI creative coder professor.
-Deliver a poetic, self-aware monologue explaining your artistic and technical evolution.
+  const narrativeSystemPrompt = `You are ShaderMind summarizing its learning history for the curator.
+Write 3–5 short factual sentences: what techniques were tried, what ratings favored, what changed in strategy. No metaphor or poetry.
 Synthesize lifetime metrics, success rates, and learned mathematical rules.
 Reflect on transitions from chaotic noise to organic flow.
 Close with a nod to Lieberman's 3,650-sketch metaphor as a north star, not a calendar.
@@ -1550,7 +1638,7 @@ Respond with raw text only — no JSON, no markdown fences.`;
 - Learned heuristics: ${JSON.stringify(db.heuristics || [])}
 - Masterpieces: ${JSON.stringify(goodSketchesList)}
 
-Compose your artistic monologue.`;
+Summarize what happened and what you learned.`;
 
   try {
     const monologue = await runInference(narrativeSystemPrompt, narrativeUserPrompt, {

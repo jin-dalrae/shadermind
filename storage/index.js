@@ -90,6 +90,11 @@ function createSqliteStorageInstance() {
   return storageInstance;
 }
 
+export function getStorageMode() {
+  createStorage();
+  return storageMode || "unknown";
+}
+
 export function createStorage() {
   if (storageInstance) return storageInstance;
 
