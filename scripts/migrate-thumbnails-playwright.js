@@ -7,7 +7,7 @@ import { galleryThumbMigrationKey } from "../public/thumbnail-config.js";
 
 const BASE = process.argv[2] || "http://localhost:8080";
 const MIGRATION_KEY = galleryThumbMigrationKey();
-const MAX_WAIT_MS = 8 * 60 * 1000;
+const MAX_WAIT_MS = 20 * 60 * 1000;
 
 async function main() {
   const browser = await chromium.launch({
@@ -25,13 +25,13 @@ async function main() {
   });
 
   console.log(`Opening ${BASE}/#gallery …`);
-  await page.goto(`${BASE}/#gallery`, { waitUntil: "networkidle", timeout: 120000 });
+  await page.goto(`${BASE}/#gallery`, { waitUntil: "domcontentloaded", timeout: 120000 });
 
   await page.evaluate((key) => {
     localStorage.removeItem(key);
   }, MIGRATION_KEY);
 
-  await page.reload({ waitUntil: "networkidle", timeout: 120000 });
+  await page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
   await page.click('[data-page="gallery"]').catch(() => {});
 
   const started = Date.now();

@@ -282,12 +282,12 @@ class ShaderMindUI {
         img.alt = sketch.title || "";
         img.loading = "lazy";
         thumb.appendChild(img);
-      } else if (this.sketchNeedsThumbnail(sketch)) {
+      } else if (this.thumbBackfillAttempted.has(sketch.id)) {
+        thumb.classList.add("archive-thumb-empty");
+      } else {
         thumb.classList.add("archive-thumb-pending");
         thumb.dataset.sketchId = sketch.id;
         this.observeThumbnailPending(thumb, sketch);
-      } else {
-        thumb.classList.add("archive-thumb-empty");
       }
 
       const score = this.ratingValue(sketch.rating);
@@ -492,8 +492,7 @@ class ShaderMindUI {
   }
 
   sketchNeedsThumbnail(sketch) {
-    if (!sketch?.id) return false;
-    if (this.ratingValue(sketch.rating) < 4) return false;
+    if (!sketch?.id || !sketch?.glsl) return false;
     if (this.thumbBackfillAttempted.has(sketch.id)) return false;
     if (!this.thumbnailNeedsUpgrade(sketch)) return false;
     // Stale compile failures (pre-GLSL-patch) must not block HD thumbnail retries.
@@ -501,12 +500,12 @@ class ShaderMindUI {
     return true;
   }
 
-  async fetchAllHighRatedSketches() {
+  async fetchAllGallerySketches() {
     const items = [];
     let page = 1;
     let pages = 1;
     while (page <= pages) {
-      const res = await fetch(`/api/sketches?rating=4&limit=50&page=${page}`);
+      const res = await fetch(`/api/sketches?limit=50&page=${page}`);
       if (!res.ok) break;
       const data = await res.json();
       pages = data.pages || 1;
@@ -541,7 +540,7 @@ class ShaderMindUI {
     const key = galleryThumbMigrationKey();
     if (localStorage.getItem(key) === "done") return;
 
-    const sketches = await this.fetchAllHighRatedSketches();
+    const sketches = await this.fetchAllGallerySketches();
     const needsUpgrade = sketches.filter(s => this.sketchNeedsThumbnail(s));
     if (!needsUpgrade.length) {
       localStorage.setItem(key, "done");
