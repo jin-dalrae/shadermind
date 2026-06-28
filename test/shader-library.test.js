@@ -19,7 +19,9 @@ describe("shader library", () => {
   it("catalog has distinct patterns", () => {
     const patterns = getAllPatterns();
     const ids = new Set(patterns.map(p => p.id));
-    assert.ok(patterns.length >= 10);
+    assert.ok(patterns.length >= 18);
+    const lo = patterns.filter(p => p.id.startsWith("lo-"));
+    assert.ok(lo.length >= 5);
     assert.equal(ids.size, patterns.length);
   });
 

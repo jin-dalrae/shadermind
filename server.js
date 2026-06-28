@@ -21,6 +21,7 @@ import { parseJsonFromModel } from "./lib/json.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
 import { assembleWorkingMemory, buildRemixSection, consolidateMemory } from "./lib/memory.js";
 import { MATH_COOKBOOK, MATH_COOKBOOK_COMPACT } from "./lib/math-cookbook.js";
+import { LEARNOPENGL_GLSL_RULES, LEARNOPENGL_SOURCE } from "./lib/learnopengl.js";
 import {
   EMPTY_PREFERENCE_MEMORY,
   buildExampleContext,
@@ -401,6 +402,7 @@ GLSL ES 1.0 rules (every shader must compile):
 - uniforms: u_time, u_resolution, u_mouse
 - No GLSL ES 3.0 (no out vec4, no .u/.v swizzles)
 - Under 55 lines each; float loops only, max 6 iterations
+${LEARNOPENGL_GLSL_RULES}
 ${MATH_COOKBOOK_COMPACT}
 
 Strategy: ${(memory.currentStrategy || "").slice(0, 400)}
@@ -602,8 +604,9 @@ Rules:
 - Prefer simple hash/noise over permute/snoise unless you include full Ashima helpers
 - Use float loops; max 6 iterations
 - Keep shaders under 60 lines; must compile in WebGL 1.0
+- LearnOpenGL discipline (${LEARNOPENGL_SOURCE}): linear lighting math, then gamma once at end
 FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
-REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, or mouse-reactive flow.
+REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, Lambert diffuse, or mouse-reactive flow.
 ${MATH_COOKBOOK}
 Strategy: ${strategyForPrompt(db.currentStrategy)}${rollupHint}
 ${preferenceSummary}`;
@@ -1569,6 +1572,7 @@ app.get("/api/shader-library", async (req, res) => {
       tags: p.tags,
       shapes: p.shapes,
       description: p.description,
+      source: p.source || null,
       averageRating: p.averageRating,
       uses: p.uses,
       lastGeneration: p.score?.lastGeneration ?? null
@@ -1576,7 +1580,8 @@ app.get("/api/shader-library", async (req, res) => {
     res.json({
       version: db.patternStats?.version ?? 0,
       patterns,
-      catalogSize: patterns.length
+      catalogSize: patterns.length,
+      curriculum: LEARNOPENGL_SOURCE
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

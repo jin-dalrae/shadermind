@@ -1152,7 +1152,7 @@ class ShaderMindUI {
       ];
       this.els.patternLibraryList.innerHTML = rows.length
         ? rows.join("")
-        : `<li>${lib.patternCount || 14} patterns ready — rate batches to rank shapes.</li>`;
+        : `<li>${lib.patternCount || 20} patterns ready (LearnOpenGL-informed) — rate batches to rank shapes.</li>`;
     }
 
     const memory = state.preferenceMemory || { prefer: [], avoid: [] };
