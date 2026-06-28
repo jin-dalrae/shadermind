@@ -3,4 +3,4 @@ node_modules/
 .DS_Store
 *.log
 *.db
-.vscode/settings.json
+.vscode/settings.json.omo/
