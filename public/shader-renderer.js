@@ -11,6 +11,7 @@ export class ShaderRenderer {
     this.loadingEl = options.loadingEl || null;
     this.hintEl = options.hintEl || null;
     this.onCompileResult = options.onCompileResult || null;
+    this.silent = options.silent === true;
     this.compileResultReported = false;
     this.gl = null;
     this.releaseSlot = null;
@@ -160,8 +161,7 @@ export class ShaderRenderer {
     const fragmentShader = this.compileShader(gl.FRAGMENT_SHADER, glslSource);
 
     if (!vertexShader || !fragmentShader) {
-      this.showError(this.error || "Shader compilation failed.");
-      this.reportCompileResult(false);
+      this.failCompile(this.error || "Shader compilation failed.");
       return false;
     }
 
@@ -177,7 +177,7 @@ export class ShaderRenderer {
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
       this.error = `Link error: ${gl.getProgramInfoLog(program) || "unknown"}`;
       gl.deleteProgram(program);
-      this.showError(this.error);
+      this.failCompile(this.error);
       return false;
     }
 
@@ -238,7 +238,7 @@ export class ShaderRenderer {
       if (attempts < maxAttempts) {
         requestAnimationFrame(() => poll());
       } else {
-        this.showError(this.error || "Shader failed to compile.");
+        this.failCompile(this.error || "Shader failed to compile.");
       }
     };
 
@@ -378,8 +378,14 @@ export class ShaderRenderer {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
   }
 
+  failCompile(message) {
+    this.error = message;
+    this.reportCompileResult(false);
+    if (!this.silent) this.showError(message);
+  }
+
   showError(message) {
-    if (this.releasingContext) return;
+    if (this.releasingContext || this.silent) return;
     console.warn("ShaderRenderer:", message);
     this.setUiState("error");
     const short = message.length > 400 ? `${message.slice(0, 400)}…` : message;

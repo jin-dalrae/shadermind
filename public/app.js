@@ -1,4 +1,4 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=12";
+import { ShaderRenderer } from "./shader-renderer.js?v=13";
 import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=7";
 import { VoiceCurator } from "./voice-curator.js?v=1";
 
@@ -33,7 +33,8 @@ class ShaderMindUI {
     this.compileResults = {};
     this.thumbBackfillQueue = [];
     this.thumbBackfillBusy = false;
-    this.thumbBackfillSeen = new Set();
+    this.thumbBackfillAttempted = new Set();
+    this.thumbBackfillSeedKey = null;
     this.timelineKey = null;
     this.pollTimer = null;
     this.pollIntervalMs = 3000;
@@ -344,10 +345,20 @@ class ShaderMindUI {
     return `${state.generationCount}:${(state.strategyTimeline || []).length}:${good.length}:${withThumb}`;
   }
 
+  sketchNeedsThumbnail(sketch) {
+    if (!sketch?.id || sketch.thumbnail) return false;
+    if (this.ratingValue(sketch.rating) < 4) return false;
+    if (this.thumbBackfillAttempted.has(sketch.id)) return false;
+    if (sketch.compile?.success === false) return false;
+    return true;
+  }
+
   seedThumbnailBackfill() {
-    this.sketches
-      .filter(s => this.ratingValue(s.rating) >= 4 && !s.thumbnail)
-      .forEach(s => this.queueThumbnailBackfill(s));
+    const pending = this.sketches.filter(s => this.sketchNeedsThumbnail(s));
+    const seedKey = `${pending.length}:${pending.map(s => s.id).join(",")}`;
+    if (seedKey === this.thumbBackfillSeedKey) return;
+    this.thumbBackfillSeedKey = seedKey;
+    pending.forEach(s => this.queueThumbnailBackfill(s));
   }
 
   async poll() {
@@ -392,7 +403,9 @@ class ShaderMindUI {
         }
       }
 
-      this.seedThumbnailBackfill();
+      if (this.currentPage === "gallery") {
+        this.seedThumbnailBackfill();
+      }
 
       const busy = ["generating", "waiting"].includes(autopilot.phase);
       this.setPollInterval(busy ? 1200 : 3000);
@@ -781,7 +794,7 @@ class ShaderMindUI {
   }
 
   queueThumbnailBackfill(sketch) {
-    if (!sketch?.id || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) return;
+    if (!this.sketchNeedsThumbnail(sketch)) return;
     if (this.thumbBackfillQueue.some(s => s.id === sketch.id)) return;
     this.thumbBackfillQueue.push(sketch);
     this.drainThumbnailBackfill();
@@ -796,11 +809,11 @@ class ShaderMindUI {
       if (this.els.shaderDialog?.open) break;
 
       const sketch = this.thumbBackfillQueue.shift();
-      if (!sketch || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) continue;
+      if (!sketch || !this.sketchNeedsThumbnail(sketch)) continue;
 
       const thumb = await this.captureSketchThumbnail(sketch);
+      this.thumbBackfillAttempted.add(sketch.id);
       if (!thumb) continue;
-      this.thumbBackfillSeen.add(sketch.id);
 
       sketch.thumbnail = thumb;
       const local = this.sketches.find(s => s.id === sketch.id);
@@ -830,7 +843,7 @@ class ShaderMindUI {
     canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_SIZE}px;height:${THUMB_SIZE}px;pointer-events:none;`;
     document.body.appendChild(canvas);
 
-    const renderer = new ShaderRenderer(canvas);
+    const renderer = new ShaderRenderer(canvas, { silent: true });
     try {
       const ok = await renderer.compile(sketch.glsl);
       if (!ok) return null;
