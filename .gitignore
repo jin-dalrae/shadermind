@@ -4,3 +4,6 @@ node_modules/
 *.log
 *.db
 .vscode/settings.json.omo/
+
+.omo/
+.vscode/
