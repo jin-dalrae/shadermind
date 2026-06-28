@@ -81,7 +81,8 @@ export class MongoStorage {
       })),
       pendingBatch: agent.pendingBatch || null,
       lastHumanOpinion: agent.lastHumanOpinion || null,
-      generationLock: agent.generationLock || null
+      generationLock: agent.generationLock || null,
+      patternStats: agent.patternStats || null
     });
   }
 
@@ -102,6 +103,7 @@ export class MongoStorage {
           statistics: data.statistics,
           pendingBatch: data.pendingBatch ?? null,
           lastHumanOpinion: data.lastHumanOpinion ?? null,
+          patternStats: data.patternStats ?? null,
           updatedAt: new Date()
         }
       },

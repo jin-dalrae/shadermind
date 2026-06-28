@@ -92,6 +92,7 @@ class ShaderMindUI {
       timelineList: document.getElementById("timelineList"),
       heuristicsList: document.getElementById("heuristicsList"),
       preferList: document.getElementById("preferList"),
+      patternLibraryList: document.getElementById("patternLibraryList"),
       avoidList: document.getElementById("avoidList"),
       systemInfo: document.getElementById("systemInfo"),
       autopilotInfo: document.getElementById("autopilotInfo"),
@@ -1138,6 +1139,21 @@ class ShaderMindUI {
         <p>${this.esc(t.notes || "")}</p>
       </div>
     `).join("");
+
+    const lib = state.patternLibrary || {};
+    const topRated = lib.topRated || [];
+    const avoidPatterns = lib.avoid || [];
+    if (this.els.patternLibraryList) {
+      const rows = [
+        ...topRated.map(p => `<li><strong>${this.esc(p.name)}</strong>
+          <span class="memory-meta">avg ${p.averageRating} · uses ${p.uses}</span></li>`),
+        ...avoidPatterns.map(p => `<li>${this.esc(p.name)}
+          <span class="memory-meta">avoid · avg ${p.averageRating}</span></li>`)
+      ];
+      this.els.patternLibraryList.innerHTML = rows.length
+        ? rows.join("")
+        : `<li>${lib.patternCount || 14} patterns ready — rate batches to rank shapes.</li>`;
+    }
 
     const memory = state.preferenceMemory || { prefer: [], avoid: [] };
     this.els.preferList.innerHTML = (memory.prefer || []).length

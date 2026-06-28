@@ -39,6 +39,14 @@ import {
   getLiveKitConfig,
   studioRoomName
 } from "./lib/livekit.js";
+import {
+  attachPatternToSketch,
+  buildBatchPatternPrompt,
+  detectPatternIds,
+  rankPatterns,
+  selectPatternsForBatch,
+  updatePatternStats
+} from "./lib/shader-library/index.js";
 
 dotenv.config();
 
@@ -360,12 +368,13 @@ void main() {
 }`
 ];
 
-async function generateBatchFast(db, userFocus, genNum) {
+async function generateBatchFast(db, userFocus, genNum, patternPlan) {
   const { evolutionary, directive, mutation } = getBatchDistribution();
   const memory = assembleWorkingMemory(db, { userOpinion: userFocus });
   const remixHint = memory.remixSeeds.length
     ? `\nGood seeds to remix (evolutionary shaders: change ONE thing):\n${memory.remixSeeds.map((s, i) => `#${i + 1} "${s.title}" — ${(s.dna || []).join(", ")}`).join("\n")}`
     : "";
+  const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
 
   const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
 You draw; the curator rates 1–5. Learn from ratings — small changes from last high-rated work, not full reinventions.
@@ -398,6 +407,7 @@ Strategy: ${(memory.currentStrategy || "").slice(0, 400)}
 Heuristics: ${memory.heuristics.slice(0, 3).join("; ")}
 ${remixHint}
 ${memory.rollupSummary ? `\nMemory: ${memory.rollupSummary.slice(0, 250)}` : ""}
+${libraryBlock ? `\n${libraryBlock}` : ""}
 
 Output raw JSON array only.`;
 
@@ -440,11 +450,14 @@ Output raw JSON array only.`;
       if (!validation.valid) {
         for (let repair = 0; repair < 2; repair++) {
           try {
+            const assignment = patternPlan?.assignments?.[idx];
             const repairMeta = {
               ...m,
-              hypothesis: `${m.hypothesis || "Visual study."}${buildGlslRepairHint(validation.reason)}`
+              hypothesis: `${m.hypothesis || "Visual study."}${buildGlslRepairHint(validation.reason)}`,
+              patternBlock: assignment?.promptBlock,
+              libraryPattern: assignment?.primaryId
             };
-            glsl = await generateGlslForSketch(repairMeta, db, userFocus, genNum, idx);
+            glsl = (await generateGlslForSketch(repairMeta, db, userFocus, genNum, idx)).glsl;
             validation = validateGlsl(glsl);
             if (validation.valid) break;
           } catch (err) {
@@ -465,7 +478,7 @@ Output raw JSON array only.`;
     GLSL_CONCURRENCY
   );
 
-  return glslResults.map(({ m, idx, glsl }) => ({
+  return glslResults.map(({ m, idx, glsl }) => attachPatternToSketch({
     id: `sketch-gen${genNum}-${idx + 1}`,
     title: m.title || `Untitled Sketch #${idx + 1}`,
     type: m.type || sketchTypeForIndex(idx),
@@ -475,13 +488,17 @@ Output raw JSON array only.`;
     generation: genNum,
     rated: false,
     rating: null,
-    dna: normalizeDna(m.dna)
-  }));
+    dna: normalizeDna(m.dna),
+    patternIds: detectPatternIds(glsl, patternPlan?.assignments?.[idx]?.primaryId
+      ? [patternPlan.assignments[idx].primaryId]
+      : [])
+  }, patternPlan?.assignments?.[idx]));
 }
 
-async function generateMetadataBatch(db, userFocus, genNum) {
+async function generateMetadataBatch(db, userFocus, genNum, patternPlan) {
   const remixSection = buildRemixSection(db);
   const { evolutionary, directive, mutation } = getBatchDistribution();
+  const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
   const preferenceSummary = CODE_AWARE_LEARNING
     ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
     : "";
@@ -497,7 +514,7 @@ Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis
 Strategy: ${strategyForPrompt(db.currentStrategy)}
 Heuristics: ${(db.heuristics || []).slice(0, 4).join("; ")}
 ${remixSection}
-${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${MATH_COOKBOOK}
+${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${MATH_COOKBOOK}
 Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only. ${DNA_PROMPT_RULE}`;
 
@@ -600,9 +617,13 @@ Novelty requirement: ${noveltyBrief}
 Write a complete, valid fragment shader.`;
   }
 
+  const patternSection = meta.patternBlock
+    ? `\n\nAssigned pattern library block:\n${meta.patternBlock}`
+    : "";
+
   const userPrompt = exampleContext
-    ? `${basePrompt}\n\nStudy these references for principles, not exact structure:\n${exampleContext}`
-    : basePrompt;
+    ? `${basePrompt}${patternSection}\n\nStudy these references for principles, not exact structure:\n${exampleContext}`
+    : `${basePrompt}${patternSection}`;
 
   const label = `GLSL gen ${genNum} #${index + 1}`;
   let lastError = null;
@@ -690,11 +711,18 @@ async function generateBatchInternal(db, userFocus) {
   autopilot.generationStartedAt = Date.now();
   autopilot.currentGeneration = genNum;
 
+  const patternPlan = selectPatternsForBatch(db, {
+    userFocus,
+    genNum,
+    batchSize: BATCH_SIZE,
+    sketchTypeForIndex
+  });
+
   let sketches;
   if (GENERATION_MODE === "staged") {
     autopilot.generationProgress = "planning concepts";
     await touchGenerationLock(autopilot.generationProgress);
-    const metadata = await generateMetadataBatch(db, userFocus, genNum);
+    const metadata = await generateMetadataBatch(db, userFocus, genNum, patternPlan);
     let completed = 0;
     autopilot.generationProgress = `0/${metadata.length} shaders`;
     await touchGenerationLock(autopilot.generationProgress);
@@ -702,9 +730,15 @@ async function generateBatchInternal(db, userFocus) {
     const glslResults = await runPool(
       metadata.map((m, idx) => async () => {
         const sketchType = m.type || sketchTypeForIndex(idx);
+        const assignment = patternPlan.assignments[idx];
+        const meta = {
+          ...m,
+          patternBlock: assignment?.promptBlock,
+          libraryPattern: assignment?.primaryId
+        };
         let generated;
         try {
-          generated = await generateGlslForSketch(m, db, userFocus, genNum, idx);
+          generated = await generateGlslForSketch(meta, db, userFocus, genNum, idx);
         } catch (err) {
           console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
           generated = fallbackGeneratedSketch(
@@ -722,7 +756,7 @@ async function generateBatchInternal(db, userFocus) {
       GLSL_CONCURRENCY
     );
 
-    sketches = glslResults.map(({ m, idx, generated }) => ({
+    sketches = glslResults.map(({ m, idx, generated }) => attachPatternToSketch({
       id: `sketch-gen${genNum}-${idx + 1}`,
       title: m.title || `Untitled Sketch #${idx + 1}`,
       type: m.type || sketchTypeForIndex(idx),
@@ -739,12 +773,15 @@ async function generateBatchInternal(db, userFocus) {
       critique: null,
       codeFeatures: generated.codeFeatures,
       learningContext: generated.learningContext,
-      dna: normalizeDna(m.dna)
-    }));
+      dna: normalizeDna(m.dna),
+      patternIds: detectPatternIds(generated.glsl, patternPlan.assignments[idx]?.primaryId
+        ? [patternPlan.assignments[idx].primaryId]
+        : [])
+    }, patternPlan.assignments[idx]));
   } else {
     autopilot.generationProgress = `writing ${BATCH_SIZE} shaders`;
     await touchGenerationLock(autopilot.generationProgress);
-    sketches = await generateBatchFast(db, userFocus, genNum);
+    sketches = await generateBatchFast(db, userFocus, genNum, patternPlan);
   }
 
   autopilot.generationProgress = null;
@@ -824,6 +861,8 @@ function recordRatingsAndPersist(
     : 0;
   const highRatedCount = ratingCounts[4] + ratingCounts[5];
   const lowRatedCount = ratingCounts[1] + ratingCounts[2];
+
+  db.patternStats = updatePatternStats(db, generation);
 
   db.statistics.generations.push({
     generation,
@@ -1482,6 +1521,17 @@ app.get("/api/state", async (req, res) => {
       successRate: db.successRate,
       heuristics: db.heuristics || [],
       preferenceMemory: db.preferenceMemory || EMPTY_PREFERENCE_MEMORY,
+      patternLibrary: {
+        patternCount: rankPatterns(db.patternStats).length,
+        topRated: rankPatterns(db.patternStats)
+          .filter(p => p.averageRating >= 4)
+          .slice(0, 5)
+          .map(p => ({ id: p.id, name: p.name, averageRating: p.averageRating, uses: p.uses })),
+        avoid: rankPatterns(db.patternStats)
+          .filter(p => p.averageRating <= 2 && p.uses >= 2)
+          .slice(0, 3)
+          .map(p => ({ id: p.id, name: p.name, averageRating: p.averageRating, uses: p.uses }))
+      },
       codeAwareLearning: CODE_AWARE_LEARNING,
       currentStrategy: db.currentStrategy,
       strategyTimeline: db.strategyTimeline,
@@ -1503,6 +1553,30 @@ app.get("/api/state", async (req, res) => {
         cyclesCompleted: autopilot.cyclesCompleted,
         lastError: autopilot.lastError
       }
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get("/api/shader-library", async (req, res) => {
+  try {
+    const db = await loadDB();
+    const patterns = rankPatterns(db.patternStats).map(p => ({
+      id: p.id,
+      name: p.name,
+      category: p.category,
+      tags: p.tags,
+      shapes: p.shapes,
+      description: p.description,
+      averageRating: p.averageRating,
+      uses: p.uses,
+      lastGeneration: p.score?.lastGeneration ?? null
+    }));
+    res.json({
+      version: db.patternStats?.version ?? 0,
+      patterns,
+      catalogSize: patterns.length
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

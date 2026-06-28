@@ -1,4 +1,5 @@
 import { EMPTY_PREFERENCE_MEMORY } from "../lib/learning/memory.js";
+import { EMPTY_PATTERN_STATS } from "../lib/shader-library/stats.js";
 
 export const DEFAULT_DB = {
   totalSketches: 0,
@@ -8,6 +9,7 @@ export const DEFAULT_DB = {
   lastConsolidationGen: 0,
   memoryRollups: [],
   preferenceMemory: { ...EMPTY_PREFERENCE_MEMORY },
+  patternStats: { ...EMPTY_PATTERN_STATS },
   currentStrategy: `Focus on fundamental machine creativity and mathematical beauty:
 1. Curves that bend and flow using harmonic waves and 2D Simplex Noise.
 2. Organic, living movement mimicking natural phenomena (like exposed candle flames in the wind).
@@ -45,6 +47,10 @@ export function mergeWithDefaults(parsed) {
     preferenceMemory: {
       ...EMPTY_PREFERENCE_MEMORY,
       ...(parsed.preferenceMemory || {})
+    },
+    patternStats: {
+      ...EMPTY_PATTERN_STATS,
+      ...(parsed.patternStats || {})
     }
   };
 }
