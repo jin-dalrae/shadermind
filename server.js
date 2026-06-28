@@ -2,7 +2,7 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { loadDB, saveDB, createStorage, getStorageMode } from "./storage/index.js";
+import { loadDB, saveDB, createStorage, getStorageMode, getStorageDiagnostics } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
 import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig, getTaskModels } from "./lib/ai.js";
 import { parseJsonFromModel } from "./lib/json.js";
@@ -1244,11 +1244,15 @@ function stopAutopilot() {
 app.get("/api/health", async (req, res) => {
   try {
     const db = await loadDB();
+    const storage = getStorageDiagnostics();
     res.json({
       ok: true,
       app: "shadermind",
-      storage: getStorageMode(),
-      mongoConfigured: Boolean(process.env.MONGODB_URI),
+      storage: storage.mode,
+      mongoConfigured: storage.mongoConfigured,
+      mongoDb: storage.mongoDb,
+      mongoFallback: storage.usingFallback,
+      mongoError: storage.mongoError,
       ratingScale: "1-5",
       generationCount: db.generationCount,
       totalSketches: db.totalSketches

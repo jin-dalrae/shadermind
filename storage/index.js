@@ -15,6 +15,7 @@ const rootDir = path.join(__dirname, "..");
 
 let storageInstance = null;
 let storageMode = null;
+let lastMongoError = null;
 
 function paginateSketches(db, { page = 1, limit = 20, generation, rating } = {}) {
   let items = [...db.sketches];
@@ -105,6 +106,17 @@ export function getStorageMode() {
   return storageMode || "unknown";
 }
 
+export function getStorageDiagnostics() {
+  createStorage();
+  return {
+    mode: storageMode || "unknown",
+    mongoConfigured: Boolean(process.env.MONGODB_URI),
+    mongoDb: process.env.MONGODB_DB || "shadermind",
+    mongoError: lastMongoError,
+    usingFallback: Boolean(process.env.MONGODB_URI) && storageMode === "json"
+  };
+}
+
 export function createStorage() {
   if (storageInstance) return storageInstance;
 
@@ -125,7 +137,8 @@ export function createStorage() {
 }
 
 async function fallbackToJson(reason) {
-  console.warn(`[Storage] MongoDB unavailable (${reason}) — falling back to database.json`);
+  lastMongoError = reason;
+  console.error(`[Storage] MongoDB unavailable (${reason}) — falling back to database.json`);
   const prev = storageInstance;
   storageInstance = null;
   storageMode = null;
@@ -146,6 +159,7 @@ export async function loadDB() {
   }
 
   try {
+    lastMongoError = null;
     return await storage.load();
   } catch (err) {
     return fallbackToJson(err.message);
