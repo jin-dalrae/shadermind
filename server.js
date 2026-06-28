@@ -29,6 +29,7 @@ import {
 } from "./lib/learnopengl.js";
 import {
   EMPTY_PREFERENCE_MEMORY,
+  buildCritiqueSummary,
   buildExampleContext,
   buildExampleDescriptions,
   buildNoveltyBrief,
@@ -38,7 +39,11 @@ import {
   findMostSimilarShader,
   normalizeDna,
   ratingValue,
-  selectLearningExamples
+  sanitizeEvolvedStrategy,
+  sanitizeHeuristics,
+  selectLearningExamples,
+  strategyForPrompt,
+  validateStrategyOutput
 } from "./lib/learning.js";
 import {
   createParticipantToken,
@@ -110,6 +115,26 @@ const autopilot = {
   generationStartedAt: null
 };
 
+let evolutionPromise = null;
+
+async function waitForEvolutionComplete() {
+  if (!evolutionPromise) return;
+  console.log("[Evolution] Waiting for in-flight strategy update before next batch...");
+  try {
+    await evolutionPromise;
+  } catch (err) {
+    console.warn("[Evolution] Previous evolution failed:", err.message);
+  }
+}
+
+function trackEvolution(promise) {
+  evolutionPromise = promise;
+  promise.finally(() => {
+    if (evolutionPromise === promise) evolutionPromise = null;
+  });
+  return promise;
+}
+
 function waitForHumanFeedback() {
   return new Promise((resolve) => {
     autopilot.resolveHumanFeedback = resolve;
@@ -156,26 +181,15 @@ function buildGlslRepairHint(reason) {
   return ` [Fix: ${reason}]`;
 }
 
-const STRATEGY_PROMPT_MAX = 500;
-const STRATEGY_STORE_MAX = 700;
-
 const DNA_PROMPT_RULE = `dna: 2-4 tags. Each tag is ONE or TWO lowercase words for concrete math/color only (sin, fbm, polar, smoothstep, amber, ripple). No strategy jargon, no sentences, no hashtags.`;
 
-function strategyForPrompt(strategy) {
-  return String(strategy || "").trim().slice(0, STRATEGY_PROMPT_MAX);
-}
-
-function compactStrategy(text) {
-  const t = String(text || "").trim().replace(/\s+/g, " ");
-  if (t.length <= STRATEGY_STORE_MAX) return t;
-  return `${t.slice(0, STRATEGY_STORE_MAX).replace(/\s+\S*$/, "")}...`;
-}
-
-function sanitizeHeuristics(items) {
-  return (Array.isArray(items) ? items : [])
-    .map(h => String(h).trim().replace(/\s*→\s*\d+%.*$/i, "").slice(0, 100))
-    .filter(Boolean)
-    .slice(0, 4);
+function learningPromptBlocks(db, genNum, userFocus, { curriculumCount = 4 } = {}) {
+  const preferenceSummary = CODE_AWARE_LEARNING
+    ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
+    : "";
+  const critiqueBlock = CODE_AWARE_LEARNING ? buildCritiqueSummary(db.sketches) : "";
+  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, curriculumCount);
+  return { preferenceSummary, critiqueBlock, curriculumBlock };
 }
 
 function sketchTypeForIndex(index, size = BATCH_SIZE) {
@@ -381,7 +395,12 @@ async function generateBatchFast(db, userFocus, genNum, patternPlan) {
     ? `\nGood seeds to remix (evolutionary shaders: change ONE thing):\n${memory.remixSeeds.map((s, i) => `#${i + 1} "${s.title}" — ${(s.dna || []).join(", ")}`).join("\n")}`
     : "";
   const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
-  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, Math.min(BATCH_SIZE + 1, 5));
+  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+    db,
+    genNum,
+    userFocus,
+    { curriculumCount: Math.min(BATCH_SIZE + 1, 5) }
+  );
 
   const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
 You draw; the curator rates 1–5. Learn from ratings — small changes from last high-rated work, not full reinventions.
@@ -411,8 +430,10 @@ GLSL ES 1.0 rules (every shader must compile):
 ${LEARNOPENGL_GLSL_RULES}
 ${MATH_COOKBOOK_COMPACT}
 ${curriculumBlock}
+${preferenceSummary ? `\n${preferenceSummary}` : ""}
+${critiqueBlock ? `\n${critiqueBlock}` : ""}
 
-Strategy: ${(memory.currentStrategy || "").slice(0, 400)}
+Strategy: ${strategyForPrompt(memory.currentStrategy)}
 Heuristics: ${memory.heuristics.slice(0, 3).join("; ")}
 ${remixHint}
 ${memory.rollupSummary ? `\nMemory: ${memory.rollupSummary.slice(0, 250)}` : ""}
@@ -508,14 +529,16 @@ async function generateMetadataBatch(db, userFocus, genNum, patternPlan) {
   const remixSection = buildRemixSection(db);
   const { evolutionary, directive, mutation } = getBatchDistribution();
   const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
-  const preferenceSummary = CODE_AWARE_LEARNING
-    ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
-    : "";
   const examples = CODE_AWARE_LEARNING
     ? selectLearningExamples(db, userFocus, { limit: 4, currentGeneration: genNum })
     : [];
   const exampleDescriptions = buildExampleDescriptions(examples);
-  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, Math.min(BATCH_SIZE + 1, 5));
+  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+    db,
+    genNum,
+    userFocus,
+    { curriculumCount: Math.min(BATCH_SIZE + 1, 5) }
+  );
   const systemPrompt = `You are ShaderMind planning ${BATCH_SIZE} shader sketches (metadata only, NO GLSL code).
 Change one thing from prior high-rated work when evolutionary — small steps, not reinventions.
 Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, dna.
@@ -524,7 +547,7 @@ Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis
 Strategy: ${strategyForPrompt(db.currentStrategy)}
 Heuristics: ${(db.heuristics || []).slice(0, 4).join("; ")}
 ${remixSection}
-${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${curriculumBlock}
+${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${critiqueBlock ? `${critiqueBlock}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${curriculumBlock}
 ${MATH_COOKBOOK}
 Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only. ${DNA_PROMPT_RULE}`;
@@ -581,11 +604,13 @@ async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
     ? selectLearningExamples(db, meta, { limit: exampleLimit, currentGeneration: genNum })
     : [];
   const exampleContext = buildExampleContext(examples, LEARNING_CONTEXT_CHARS);
-  const preferenceSummary = CODE_AWARE_LEARNING
-    ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
-    : "";
+  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+    db,
+    genNum,
+    userFocus,
+    { curriculumCount: 3 }
+  );
   const noveltyBrief = buildNoveltyBrief(examples);
-  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, 3);
 
   let systemPrompt;
   let basePrompt;
@@ -618,6 +643,7 @@ Rules:
 FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
 REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, Lambert diffuse, or mouse-reactive flow.
 ${curriculumBlock}
+${critiqueBlock ? `\n${critiqueBlock}` : ""}
 ${MATH_COOKBOOK}
 Strategy: ${strategyForPrompt(db.currentStrategy)}${rollupHint}
 ${preferenceSummary}`;
@@ -720,6 +746,9 @@ async function runPool(taskFns, concurrency) {
 }
 
 async function generateBatchInternal(db, userFocus) {
+  await waitForEvolutionComplete();
+  db = await loadDB();
+
   const genNum = db.generationCount + 1;
   setSessionAffinity(`shadermind-gen-${genNum}`);
   autopilot.generationStartedAt = Date.now();
@@ -1062,6 +1091,7 @@ function stringList(value) {
 
 async function evolveStrategyInternal(db, generation, ratingSummary, userOpinion) {
   const prevStrategy = db.currentStrategy;
+  const critiqueBlock = buildCritiqueSummary(db.sketches);
 
   const evolutionSystemPrompt = `You are ShaderMind updating generation rules after a rated batch.
 
@@ -1079,7 +1109,7 @@ Respond with JSON only:
   "evolvedStrategy": "max 120 words. Plain bullet rules for next shaders: motion, palette, techniques. No metaphor."
 }`;
 
-  const evolutionUserPrompt = `Previous Strategy:
+  const buildEvolutionUserPrompt = (retryNote = "") => `Previous Strategy:
 ${strategyForPrompt(prevStrategy)}
 
 Last Generation (#${generation}) Performance:
@@ -1093,32 +1123,72 @@ Curator Comments on this batch: "${userOpinion || "No custom comment left."}"
 
 Evidence-backed preference memory:
 ${buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)}
+${critiqueBlock ? `\n${critiqueBlock}` : ""}
+${retryNote}
 
 Use the evidence counts above rather than inventing approval rates. Then output your updated generation strategy guidelines.`;
 
   try {
-    const rawResponse = await runInference(evolutionSystemPrompt, evolutionUserPrompt, {
-      task: "evolution",
-      jsonMode: true,
-      models: getTaskModels("evolution").slice(0, 1),
-      retriesPerModel: 1,
-      maxTokens: 3000,
-      label: `strategy evolution gen ${generation}`
-    });
-    const parsedEvo = parseJsonFromModel(rawResponse);
+    let parsedEvo = null;
+    let validated = null;
 
-    db.currentStrategy = compactStrategy(parsedEvo.evolvedStrategy || db.currentStrategy);
-    db.heuristics = sanitizeHeuristics(parsedEvo.heuristics) || db.heuristics || [];
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const retryNote = attempt > 0
+        ? "\nREJECTED: prior output was too long or used banned jargon. Max 120 words, 3 concrete heuristics, no metaphor."
+        : "";
+      const rawResponse = await runInference(
+        evolutionSystemPrompt,
+        buildEvolutionUserPrompt(retryNote),
+        {
+          task: "evolution",
+          jsonMode: true,
+          models: getTaskModels("evolution").slice(0, 1),
+          retriesPerModel: 1,
+          maxTokens: 3000,
+          label: `strategy evolution gen ${generation}${attempt ? " retry" : ""}`
+        }
+      );
+      parsedEvo = parseJsonFromModel(rawResponse);
+      validated = validateStrategyOutput({
+        evolvedStrategy: parsedEvo.evolvedStrategy,
+        heuristics: parsedEvo.heuristics,
+        analysis: parsedEvo.analysis
+      });
+      if (validated.valid) break;
+      console.warn(`[Evolution] Gen #${generation} strategy rejected (${validated.reason}) — retrying`);
+    }
+
+    if (!validated?.valid) {
+      db.currentStrategy = sanitizeEvolvedStrategy(prevStrategy) || db.currentStrategy;
+      db.heuristics = sanitizeHeuristics(db.heuristics) || db.heuristics || [];
+      const notes = parsedEvo?.analysis
+        || `Kept prior strategy after invalid evolution output (${validated?.reason || "unknown"}).`;
+      db.strategyTimeline.push({
+        generation,
+        timestamp: new Date().toISOString(),
+        strategy: db.currentStrategy,
+        notes,
+        curatorSource: db._pendingCuratorSource || "human"
+      });
+      return {
+        analysis: notes,
+        heuristics: db.heuristics,
+        evolvedStrategy: db.currentStrategy
+      };
+    }
+
+    db.currentStrategy = validated.evolvedStrategy;
+    db.heuristics = validated.heuristics;
     db.strategyTimeline.push({
       generation,
       timestamp: new Date().toISOString(),
       strategy: db.currentStrategy,
-      notes: parsedEvo.analysis,
+      notes: validated.analysis,
       curatorSource: db._pendingCuratorSource || "human"
     });
 
     return {
-      analysis: parsedEvo.analysis,
+      analysis: validated.analysis,
       heuristics: db.heuristics,
       evolvedStrategy: db.currentStrategy
     };
@@ -1279,7 +1349,9 @@ async function runEvolutionPipeline(db, generation, ratingSummary, userOpinion, 
 }
 
 function scheduleEvolution(db, generation, ratingSummary, userOpinion, curatorSource) {
-  runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource)
+  trackEvolution(
+    runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource)
+  )
     .then(() => {
       console.log(
         `[Evolution] Gen #${generation} strategy updated ` +
@@ -1333,7 +1405,9 @@ async function processFeedbackAndEvolve(
     };
   }
 
-  const evolution = await runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource);
+  const evolution = await trackEvolution(
+    runEvolutionPipeline(db, generation, ratingSummary, userOpinion, curatorSource)
+  );
   return { evolution, ratingSummary, evolutionPending: false };
 }
 
@@ -1368,6 +1442,7 @@ async function waitForHumanOrTimeout() {
 }
 
 async function runAutopilotCycle() {
+  await waitForEvolutionComplete();
   const db = await loadDB();
 
   if (db.pendingBatch?.sketches?.length) {
@@ -1668,6 +1743,7 @@ async function buildAutopilotStatus() {
     currentBatch: autopilot.currentBatch?.map(prepareSketchForClient) ?? null,
     generationProgress: autopilot.generationProgress,
     generationMode: GENERATION_MODE,
+    evolutionInFlight: Boolean(evolutionPromise),
     intervalMs: AUTOPILOT_INTERVAL_MS,
     instanceId: INSTANCE_ID,
     sharedStudio: false,
