@@ -2,6 +2,7 @@ import { MongoClient } from "mongodb";
 import { DEFAULT_DB, mergeWithDefaults } from "./default-db.js";
 
 const AGENT_ID = "shadermind";
+const GENERATION_LOCK_TTL_MS = Number(process.env.GENERATION_LOCK_TTL_MS) || 600000;
 
 export class MongoStorage {
   constructor(uri, dbName = "shadermind") {
@@ -79,7 +80,8 @@ export class MongoStorage {
         createdAt: r.createdAt
       })),
       pendingBatch: agent.pendingBatch || null,
-      lastHumanOpinion: agent.lastHumanOpinion || null
+      lastHumanOpinion: agent.lastHumanOpinion || null,
+      generationLock: agent.generationLock || null
     });
   }
 
@@ -205,6 +207,76 @@ export class MongoStorage {
   async getLatestRollup() {
     const db = await this.connect();
     return db.collection("memory_rollups").findOne({}, { sort: { toGeneration: -1 } });
+  }
+
+  async getGenerationLock() {
+    const db = await this.connect();
+    const agent = await db.collection("agent_state").findOne(
+      { _id: AGENT_ID },
+      { projection: { generationLock: 1 } }
+    );
+    return agent?.generationLock || null;
+  }
+
+  async tryAcquireGenerationLock(holderId, generation, ttlMs = GENERATION_LOCK_TTL_MS) {
+    const db = await this.connect();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + ttlMs);
+
+    await db.collection("agent_state").updateOne(
+      { _id: AGENT_ID },
+      { $setOnInsert: { generationCount: 0, totalSketches: 0 } },
+      { upsert: true }
+    );
+
+    const result = await db.collection("agent_state").findOneAndUpdate(
+      {
+        _id: AGENT_ID,
+        $or: [
+          { generationLock: { $exists: false } },
+          { generationLock: null },
+          { "generationLock.expiresAt": { $lt: now.toISOString() } }
+        ]
+      },
+      {
+        $set: {
+          generationLock: {
+            holder: holderId,
+            generation,
+            phase: "generating",
+            progress: null,
+            startedAt: now.toISOString(),
+            expiresAt: expiresAt.toISOString()
+          }
+        }
+      },
+      { returnDocument: "after" }
+    );
+
+    return result?.generationLock?.holder === holderId;
+  }
+
+  async renewGenerationLock(holderId, { progress, generation } = {}) {
+    const db = await this.connect();
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + GENERATION_LOCK_TTL_MS);
+    const update = { "generationLock.expiresAt": expiresAt.toISOString() };
+    if (progress !== undefined) update["generationLock.progress"] = progress;
+    if (generation !== undefined) update["generationLock.generation"] = generation;
+
+    const result = await db.collection("agent_state").updateOne(
+      { _id: AGENT_ID, "generationLock.holder": holderId },
+      { $set: update }
+    );
+    return result.modifiedCount > 0;
+  }
+
+  async releaseGenerationLock(holderId) {
+    const db = await this.connect();
+    await db.collection("agent_state").updateOne(
+      { _id: AGENT_ID, "generationLock.holder": holderId },
+      { $unset: { generationLock: "" } }
+    );
   }
 
   async close() {

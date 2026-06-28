@@ -188,3 +188,41 @@ export async function saveDB(data) {
     failMongo(err.message);
   }
 }
+
+function lockExpired(lock) {
+  if (!lock?.expiresAt) return true;
+  return Date.parse(lock.expiresAt) < Date.now();
+}
+
+export async function getGenerationLock() {
+  const storage = createStorage();
+  if (typeof storage.getGenerationLock === "function") {
+    return storage.getGenerationLock();
+  }
+  const db = await storage.load();
+  const lock = db.generationLock || null;
+  return lockExpired(lock) ? null : lock;
+}
+
+export async function tryAcquireGenerationLock(holderId, generation) {
+  const storage = createStorage();
+  if (typeof storage.tryAcquireGenerationLock === "function") {
+    return storage.tryAcquireGenerationLock(holderId, generation);
+  }
+  return true;
+}
+
+export async function renewGenerationLock(holderId, opts = {}) {
+  const storage = createStorage();
+  if (typeof storage.renewGenerationLock === "function") {
+    return storage.renewGenerationLock(holderId, opts);
+  }
+  return true;
+}
+
+export async function releaseGenerationLock(holderId) {
+  const storage = createStorage();
+  if (typeof storage.releaseGenerationLock === "function") {
+    return storage.releaseGenerationLock(holderId);
+  }
+}

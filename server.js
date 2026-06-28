@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import os from "os";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
 import {
@@ -8,7 +9,11 @@ import {
   createStorage,
   getStorageMode,
   getStorageDiagnostics,
-  assertStorageReady
+  assertStorageReady,
+  getGenerationLock,
+  tryAcquireGenerationLock,
+  renewGenerationLock,
+  releaseGenerationLock
 } from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
 import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig, getTaskModels } from "./lib/ai.js";
@@ -42,7 +47,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const PORT = process.env.PORT || 8080;
-const AUTOPILOT_ENABLED = process.env.AUTOPILOT !== "false";
+const IS_DEPLOYED = Boolean(process.env.DO_APP_ID);
+const SHARED_MONGO = Boolean(process.env.MONGODB_URI);
+const AUTOPILOT_LOCAL = process.env.AUTOPILOT_LOCAL === "true";
+const AUTOPILOT_ENABLED = process.env.AUTOPILOT !== "false"
+  && (IS_DEPLOYED || AUTOPILOT_LOCAL || !SHARED_MONGO);
 const AUTOPILOT_INTERVAL_MS = Number(process.env.AUTOPILOT_INTERVAL_MS ?? 0);
 const AUTOPILOT_SEED_CYCLES = Number(process.env.AUTOPILOT_SEED_CYCLES) || 3;
 
@@ -60,6 +69,8 @@ const CONSOLIDATION_EVERY_N = Number(process.env.CONSOLIDATION_EVERY_N) || 25;
 const CODE_AWARE_LEARNING = process.env.CODE_AWARE_LEARNING !== "false";
 const LEARNING_CONTEXT_CHARS = Number(process.env.LEARNING_CONTEXT_CHARS) || 9000;
 const SHADER_SIMILARITY_THRESHOLD = Number(process.env.SHADER_SIMILARITY_THRESHOLD) || 0.82;
+const INSTANCE_ID = `${os.hostname()}-${process.pid}`;
+const SHARED_STUDIO_POLL_MS = Number(process.env.SHARED_STUDIO_POLL_MS) || 2000;
 
 app.use(express.json({ limit: "50mb" }));
 app.use(express.static(path.join(__dirname, "public"), {
@@ -96,6 +107,19 @@ function releaseHumanGate() {
     autopilot.resolveHumanFeedback();
     autopilot.resolveHumanFeedback = null;
   }
+}
+
+function lockIsActive(lock) {
+  return Boolean(lock?.expiresAt && Date.parse(lock.expiresAt) > Date.now());
+}
+
+async function touchGenerationLock(progress) {
+  if (autopilot.phase !== "generating") return;
+  const generation = autopilot.currentGeneration;
+  await renewGenerationLock(INSTANCE_ID, {
+    progress: progress ?? autopilot.generationProgress,
+    generation
+  });
 }
 
 function getBatchDistribution(size = BATCH_SIZE) {
@@ -185,6 +209,37 @@ async function restorePendingStudio(db) {
   autopilot.currentGeneration = pending.generation;
   autopilot.phase = "awaiting_human";
   return true;
+}
+
+async function syncStudioFromDatabase() {
+  const db = await loadDB();
+  if (db.pendingBatch?.sketches?.length) {
+    await restorePendingStudio(db);
+    return true;
+  }
+  return false;
+}
+
+async function getActiveStudioBatch() {
+  if (autopilot.currentBatch?.length) {
+    return {
+      generation: autopilot.currentGeneration,
+      sketches: autopilot.currentBatch
+    };
+  }
+
+  const db = await loadDB();
+  if (db.pendingBatch?.sketches?.length) {
+    return {
+      generation: db.pendingBatch.generation,
+      sketches: db.pendingBatch.sketches.map(s => ({
+        ...s,
+        glsl: decodeGlslField(s.glsl)
+      }))
+    };
+  }
+
+  return null;
 }
 
 async function resumePendingAutopilotCycle() {
@@ -633,13 +688,16 @@ async function generateBatchInternal(db, userFocus) {
   const genNum = db.generationCount + 1;
   setSessionAffinity(`shadermind-gen-${genNum}`);
   autopilot.generationStartedAt = Date.now();
+  autopilot.currentGeneration = genNum;
 
   let sketches;
   if (GENERATION_MODE === "staged") {
     autopilot.generationProgress = "planning concepts";
+    await touchGenerationLock(autopilot.generationProgress);
     const metadata = await generateMetadataBatch(db, userFocus, genNum);
     let completed = 0;
     autopilot.generationProgress = `0/${metadata.length} shaders`;
+    await touchGenerationLock(autopilot.generationProgress);
 
     const glslResults = await runPool(
       metadata.map((m, idx) => async () => {
@@ -658,6 +716,7 @@ async function generateBatchInternal(db, userFocus) {
         }
         completed += 1;
         autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
+        await touchGenerationLock(autopilot.generationProgress);
         return { m, idx, generated };
       }),
       GLSL_CONCURRENCY
@@ -684,6 +743,7 @@ async function generateBatchInternal(db, userFocus) {
     }));
   } else {
     autopilot.generationProgress = `writing ${BATCH_SIZE} shaders`;
+    await touchGenerationLock(autopilot.generationProgress);
     sketches = await generateBatchFast(db, userFocus, genNum);
   }
 
@@ -1225,26 +1285,68 @@ async function processFeedbackAndEvolve(
 }
 
 async function waitForHumanOrTimeout() {
-  if (LEARNING_MODE !== "hybrid") {
-    await waitForHumanFeedback();
-    return "human";
+  const hybrid = LEARNING_MODE === "hybrid";
+  const deadline = hybrid ? Date.now() + HYBRID_TIMEOUT_MS : null;
+
+  while (autopilot.phase === "awaiting_human") {
+    const db = await loadDB();
+    if (!db.pendingBatch?.sketches?.length) {
+      return "human";
+    }
+
+    if (hybrid && Date.now() >= deadline) {
+      console.log(`[Autopilot] Hybrid timeout (${HYBRID_TIMEOUT_MS}ms) — auto-curating`);
+      return "timeout";
+    }
+
+    const waitMs = hybrid
+      ? Math.min(SHARED_STUDIO_POLL_MS, Math.max(0, deadline - Date.now()))
+      : SHARED_STUDIO_POLL_MS;
+
+    const result = await Promise.race([
+      waitForHumanFeedback().then(() => "local"),
+      sleep(waitMs).then(() => null)
+    ]);
+
+    if (result === "local") return "human";
   }
 
-  const result = await Promise.race([
-    waitForHumanFeedback().then(() => "human"),
-    sleep(HYBRID_TIMEOUT_MS).then(() => "timeout")
-  ]);
-
-  if (result === "timeout" && autopilot.phase === "awaiting_human") {
-    console.log(`[Autopilot] Hybrid timeout (${HYBRID_TIMEOUT_MS}ms) — auto-curating`);
-    return "timeout";
-  }
   return "human";
 }
 
 async function runAutopilotCycle() {
   const db = await loadDB();
-  await clearPendingStudio(db);
+
+  if (db.pendingBatch?.sketches?.length) {
+    await restorePendingStudio(db);
+    autopilot.phase = "awaiting_human";
+    console.log(
+      `[Autopilot] Gen #${autopilot.currentGeneration} ready — ` +
+      `${LEARNING_MODE === "hybrid" ? "human or timeout" : "waiting for human curation"} (shared)`
+    );
+
+    const curationResult = await waitForHumanOrTimeout();
+    if (curationResult === "timeout") {
+      const sketches = autopilot.currentBatch || db.pendingBatch.sketches;
+      autopilot.phase = "evolving";
+      const { ratings, opinion } = await autoCurateBatch(sketches, db);
+      await processFeedbackAndEvolve(db, autopilot.currentGeneration, ratings, sketches, opinion, "autonomous");
+      releaseHumanGate();
+    }
+
+    autopilot.cyclesCompleted += 1;
+    autopilot.phase = "waiting";
+    autopilot.currentBatch = null;
+    autopilot.currentGeneration = null;
+    console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen curated (shared)`);
+    return;
+  }
+
+  const nextGeneration = db.generationCount + 1;
+  if (!(await tryAcquireGenerationLock(INSTANCE_ID, nextGeneration))) {
+    console.log("[Autopilot] Another instance is generating — deferring cycle");
+    return;
+  }
 
   const focus = autopilot.lastHumanOpinion
     || db.lastHumanOpinion
@@ -1254,9 +1356,16 @@ async function runAutopilotCycle() {
   autopilot.phase = "generating";
   autopilot.lastError = null;
   autopilot.currentBatch = null;
-  autopilot.currentGeneration = null;
+  autopilot.currentGeneration = nextGeneration;
 
-  const { generation, sketches } = await generateBatchInternal(db, focus);
+  let generation;
+  let sketches;
+  try {
+    ({ generation, sketches } = await generateBatchInternal(db, focus));
+  } finally {
+    await releaseGenerationLock(INSTANCE_ID);
+  }
+
   autopilot.currentBatch = sketches.map(s => ({ ...s, rated: false, rating: null }));
   autopilot.currentGeneration = generation;
 
@@ -1266,13 +1375,18 @@ async function runAutopilotCycle() {
     await processFeedbackAndEvolve(db, generation, ratings, sketches, opinion, "autonomous");
     autopilot.cyclesCompleted += 1;
     autopilot.phase = "waiting";
+    autopilot.currentBatch = null;
+    autopilot.currentGeneration = null;
     console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} auto-curated`);
     return;
   }
 
   autopilot.phase = "awaiting_human";
   await savePendingStudio(db);
-  console.log(`[Autopilot] Gen #${generation} ready — ${LEARNING_MODE === "hybrid" ? "human or timeout" : "waiting for human curation"}`);
+  console.log(
+    `[Autopilot] Gen #${generation} ready — ` +
+    `${LEARNING_MODE === "hybrid" ? "human or timeout" : "waiting for human curation"}`
+  );
 
   const curationResult = await waitForHumanOrTimeout();
 
@@ -1285,6 +1399,8 @@ async function runAutopilotCycle() {
 
   autopilot.cyclesCompleted += 1;
   autopilot.phase = "waiting";
+  autopilot.currentBatch = null;
+  autopilot.currentGeneration = null;
   console.log(`[Autopilot] Cycle ${autopilot.cyclesCompleted} complete — Gen #${generation} curated`);
 }
 
@@ -1443,8 +1559,13 @@ app.post("/api/memory/consolidate", async (req, res) => {
   }
 });
 
-app.get("/api/autopilot/status", (req, res) => {
-  res.json({
+async function buildAutopilotStatus() {
+  const db = await loadDB();
+  if (db.pendingBatch?.sketches?.length) {
+    await restorePendingStudio(db);
+  }
+
+  const status = {
     running: autopilot.running,
     phase: autopilot.phase,
     cyclesCompleted: autopilot.cyclesCompleted,
@@ -1454,8 +1575,44 @@ app.get("/api/autopilot/status", (req, res) => {
     currentBatch: autopilot.currentBatch?.map(prepareSketchForClient) ?? null,
     generationProgress: autopilot.generationProgress,
     generationMode: GENERATION_MODE,
-    intervalMs: AUTOPILOT_INTERVAL_MS
-  });
+    intervalMs: AUTOPILOT_INTERVAL_MS,
+    instanceId: INSTANCE_ID,
+    sharedStudio: false,
+    autopilotLeader: AUTOPILOT_ENABLED
+  };
+
+  if (db.pendingBatch?.sketches?.length) {
+    status.phase = "awaiting_human";
+    status.awaitingHuman = true;
+    status.currentGeneration = db.pendingBatch.generation;
+    status.currentBatch = db.pendingBatch.sketches.map(prepareSketchForClient);
+    status.sharedStudio = true;
+    return status;
+  }
+
+  if (autopilot.phase === "generating") {
+    return status;
+  }
+
+  const lock = await getGenerationLock();
+  if (lockIsActive(lock) && lock.holder !== INSTANCE_ID) {
+    status.phase = "generating";
+    status.awaitingHuman = false;
+    status.currentGeneration = lock.generation ?? status.currentGeneration;
+    status.generationProgress = lock.progress || "generating on another instance";
+    status.currentBatch = null;
+    status.sharedStudio = true;
+  }
+
+  return status;
+}
+
+app.get("/api/autopilot/status", async (req, res) => {
+  try {
+    res.json(await buildAutopilotStatus());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get("/api/livekit/config", (req, res) => {
@@ -1470,7 +1627,8 @@ app.post("/api/livekit/token", async (req, res) => {
 
   try {
     const db = await loadDB();
-    const generation = autopilot.currentGeneration || db.generationCount || "live";
+    const studio = await getActiveStudioBatch();
+    const generation = studio?.generation || autopilot.currentGeneration || db.generationCount || "live";
     const room = studioRoomName(generation);
     const { identity, name } = req.body || {};
     const apiBase = process.env.SHADERMIND_PUBLIC_URL
@@ -1508,11 +1666,17 @@ app.post("/api/autopilot/kick", (req, res) => {
 });
 
 app.post("/api/autopilot/regenerate-batch", async (req, res) => {
-  if (autopilot.phase !== "awaiting_human" || !autopilot.currentBatch?.length) {
+  const studio = await getActiveStudioBatch();
+  if (!studio?.sketches?.length) {
     return res.status(409).json({ error: "No batch awaiting curation." });
   }
   if (autopilot._regenerating || autopilot.phase === "generating") {
     return res.status(409).json({ error: "Already generating." });
+  }
+
+  const lock = await getGenerationLock();
+  if (lockIsActive(lock) && lock.holder !== INSTANCE_ID) {
+    return res.status(409).json({ error: "Another instance is generating." });
   }
 
   const focus = req.body?.focus?.trim();
@@ -1531,6 +1695,16 @@ app.post("/api/autopilot/regenerate-batch", async (req, res) => {
   autopilot.phase = "generating";
   autopilot.generationProgress = "regenerating batch";
   autopilot.lastError = null;
+  autopilot.currentBatch = studio.sketches.map(s => ({ ...s, rated: false, rating: null }));
+  autopilot.currentGeneration = studio.generation;
+
+  const regenGeneration = studio.generation;
+  if (!(await tryAcquireGenerationLock(INSTANCE_ID, regenGeneration))) {
+    autopilot._regenerating = false;
+    autopilot.phase = "awaiting_human";
+    autopilot.generationProgress = null;
+    return res.status(409).json({ error: "Another instance is generating." });
+  }
 
   try {
     const db = await loadDB();
@@ -1553,24 +1727,29 @@ app.post("/api/autopilot/regenerate-batch", async (req, res) => {
     console.error("[Autopilot] Regenerate failed:", err.message);
     res.status(500).json({ error: err.message });
   } finally {
+    await releaseGenerationLock(INSTANCE_ID);
     autopilot._regenerating = false;
     autopilot.generationProgress = null;
   }
 });
 
 app.post("/api/autopilot/generate-next", async (req, res) => {
-  if (autopilot.phase === "awaiting_human") {
+  const db = await loadDB();
+  if (db.pendingBatch?.sketches?.length || autopilot.phase === "awaiting_human") {
     return res.status(409).json({ error: "Rate the current batch first, or use Regenerate batch." });
   }
   if (autopilot.phase === "generating") {
     return res.status(409).json({ error: "Already generating." });
+  }
+  const remoteLock = await getGenerationLock();
+  if (lockIsActive(remoteLock) && remoteLock.holder !== INSTANCE_ID) {
+    return res.status(409).json({ error: "Another instance is generating." });
   }
 
   const focus = req.body?.focus?.trim();
   if (focus) {
     autopilot.lastHumanOpinion = focus;
     try {
-      const db = await loadDB();
       db.lastHumanOpinion = focus;
       await saveDB(db);
     } catch (err) {
@@ -1730,9 +1909,10 @@ app.post("/api/feedback", async (req, res) => {
     return res.status(400).json({ error: "Missing generation or ratings." });
   }
 
+  const studio = await getActiveStudioBatch();
   const expectedSketches = Array.isArray(newSketches) && newSketches.length
     ? newSketches
-    : (autopilot.currentBatch || []);
+    : (studio?.sketches || []);
   const missingRating = expectedSketches.find(sketch => ratingValue(ratings[sketch.id]) === null);
   const invalidRating = Object.values(ratings).find(rating => ratingValue(rating) === null);
   if (missingRating || invalidRating !== undefined) {
@@ -1836,6 +2016,7 @@ server.on("error", (err) => {
 
 async function bootServer() {
   console.log(`ShaderMind running on http://localhost:${PORT}`);
+  console.log(`Instance: ${INSTANCE_ID} (shared studio coordination enabled)`);
   if (process.env.DO_APP_ID) {
     console.log(`Deploy: DigitalOcean App Platform (app ${process.env.DO_APP_ID})`);
   }
@@ -1870,7 +2051,16 @@ async function bootServer() {
   console.log(`Loop: autopilot delay=${AUTOPILOT_INTERVAL_MS}ms, evolution async=${EVOLUTION_ASYNC}`);
   console.log(`Learning: mode=${LEARNING_MODE}, code-aware=${CODE_AWARE_LEARNING}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
-  if (!AUTOPILOT_ENABLED) return;
+  if (!AUTOPILOT_ENABLED) {
+    if (SHARED_MONGO && !IS_DEPLOYED && process.env.AUTOPILOT !== "false") {
+      console.log(
+        "Autopilot disabled on local dev with shared MongoDB — production generates; "
+        + "Studio reads pendingBatch from Atlas. Set AUTOPILOT_LOCAL=true to generate locally."
+      );
+    }
+    await syncStudioFromDatabase();
+    return;
+  }
 
   const db = await loadDB();
   if (db.lastHumanOpinion) {
