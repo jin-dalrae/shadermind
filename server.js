@@ -1691,7 +1691,9 @@ async function bootServer() {
     console.log(`AI task pools: planning=${ai.taskModels.planning.join("→")}, glsl=${ai.taskModels.glsl.join("→")}`);
   }
   if (ai.geminiFallback) {
-    console.log(`AI fallback: Gemini (${process.env.GEMINI_MODEL || "gemini-2.5-flash"})`);
+    console.log(
+      `AI fallback: Gemini planning=${ai.geminiModel}, glsl=${ai.geminiGlslModel}`
+    );
   }
   console.log(`Generation: mode=${GENERATION_MODE}, batch=${ai.batchSize}, glsl concurrency=${ai.glslConcurrency}, remix=${REMIX_MUTATION}`);
   console.log(`Loop: autopilot delay=${AUTOPILOT_INTERVAL_MS}ms, evolution async=${EVOLUTION_ASYNC}`);

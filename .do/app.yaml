@@ -24,6 +24,10 @@ services:
         type: SECRET
       - key: ALLOW_GEMINI_FALLBACK
         value: "true"
+      - key: GEMINI_MODEL
+        value: gemini-3.5-flash
+      - key: GEMINI_GLSL_MODEL
+        value: gemini-3.5-flash
       - key: MONGODB_DB
         value: shadermind
       - key: LEARNING_MODE
