@@ -1,5 +1,6 @@
 import { MongoClient } from "mongodb";
 import { DEFAULT_DB, mergeWithDefaults } from "./default-db.js";
+import { normalizeSketchDoc, sketchFieldsForMongo } from "./mongo-sketch.js";
 
 const AGENT_ID = "shadermind";
 const GENERATION_LOCK_TTL_MS = Number(process.env.GENERATION_LOCK_TTL_MS) || 600000;
@@ -56,20 +57,8 @@ export class MongoStorage {
       currentStrategy: agent.currentStrategy ?? DEFAULT_DB.currentStrategy,
       heuristics: agent.heuristics ?? DEFAULT_DB.heuristics,
       strategyTimeline,
-      sketches: sketches.map(s => ({
-        id: s.id,
-        title: s.title,
-        type: s.type,
-        hypothesis: s.hypothesis,
-        glsl: s.glsl,
-        poetic_statement: s.poetic_statement,
-        generation: s.generation,
-        rated: s.rated,
-        rating: s.rating,
-        dna: s.dna,
-        thumbnail: s.thumbnail || null,
-        curatorSource: s.curatorSource
-      })),
+      sketches: sketches.map(normalizeSketchDoc).filter(Boolean),
+      preferenceMemory: agent.preferenceMemory ?? undefined,
       statistics: agent.statistics ?? { generations: [], popularTags: [] },
       memoryRollups: rollups.map(r => ({
         fromGeneration: r.fromGeneration,
@@ -104,6 +93,7 @@ export class MongoStorage {
           pendingBatch: data.pendingBatch ?? null,
           lastHumanOpinion: data.lastHumanOpinion ?? null,
           patternStats: data.patternStats ?? null,
+          preferenceMemory: data.preferenceMemory ?? null,
           updatedAt: new Date()
         }
       },
@@ -111,18 +101,16 @@ export class MongoStorage {
     );
 
     if (data.sketches?.length) {
-      const ops = data.sketches.map(s => ({
-        updateOne: {
-          filter: { id: s.id },
-          update: {
-            $set: {
-              ...s,
-              createdAt: s.createdAt || new Date()
-            }
-          },
-          upsert: true
-        }
-      }));
+      const ops = data.sketches
+        .map(sketchFieldsForMongo)
+        .filter(Boolean)
+        .map(payload => ({
+          updateOne: {
+            filter: { id: payload.id },
+            update: { $set: payload },
+            upsert: true
+          }
+        }));
       await db.collection("sketches").bulkWrite(ops, { ordered: false });
     }
 
@@ -137,9 +125,14 @@ export class MongoStorage {
             timestamp: entry.timestamp,
             reflection: entry.notes,
             strategySnapshot: entry.strategy,
-            curatorSource: entry.curatorSource || "human",
-            goodCount: stat?.goodCount,
-            badCount: stat?.badCount,
+            curatorSource: entry.curatorSource || stat?.curatorSource || "human",
+            goodCount: stat?.goodCount ?? stat?.highRatedCount,
+            badCount: stat?.badCount ?? stat?.lowRatedCount,
+            highRatedCount: stat?.highRatedCount,
+            lowRatedCount: stat?.lowRatedCount,
+            neutralCount: stat?.neutralCount,
+            averageRating: stat?.averageRating,
+            ratingCounts: stat?.ratingCounts,
             successRate: stat?.successRate
           }
         },
@@ -175,7 +168,7 @@ export class MongoStorage {
       .toArray();
 
     return {
-      items,
+      items: items.map(normalizeSketchDoc).filter(Boolean),
       page: Math.max(1, page),
       limit,
       total,
