@@ -1279,7 +1279,7 @@ async function maybeConsolidateMemory(db) {
   }
 }
 
-const MAX_THUMBNAIL_BYTES = 24000;
+const MAX_THUMBNAIL_BYTES = Number(process.env.MAX_THUMBNAIL_BYTES) || 200000;
 
 function isValidThumbnail(value) {
   return typeof value === "string"

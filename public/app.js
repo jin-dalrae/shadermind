@@ -1,10 +1,12 @@
 import { ShaderRenderer } from "./shader-renderer.js?v=13";
 import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=7";
 import { VoiceCurator } from "./voice-curator.js?v=1";
-
-const THUMB_SIZE = 96;
-const THUMB_TIME = 1.25;
-const THUMB_QUALITY = 0.65;
+import {
+  THUMB_CAPTURE_SIZE,
+  THUMB_LEGACY_MAX_CHARS,
+  THUMB_QUALITY,
+  THUMB_TIME
+} from "./thumbnail-config.js?v=1";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -35,6 +37,7 @@ class ShaderMindUI {
     this.thumbBackfillBusy = false;
     this.thumbBackfillAttempted = new Set();
     this.thumbBackfillSeedKey = null;
+    this.thumbObserver = null;
     this.timelineKey = null;
     this.pollTimer = null;
     this.pollIntervalMs = 3000;
@@ -106,6 +109,7 @@ class ShaderMindUI {
       shaderDialog: document.getElementById("shaderDialog"),
       dialogClose: document.getElementById("dialogClose"),
       dialogCanvas: document.getElementById("dialogCanvas"),
+      dialogPoster: document.getElementById("dialogPoster"),
       dialogError: document.getElementById("dialogError"),
       dialogLoading: document.getElementById("dialogLoading"),
       dialogHint: document.getElementById("dialogHint"),
@@ -276,7 +280,8 @@ class ShaderMindUI {
         thumb.appendChild(img);
       } else {
         thumb.classList.add("archive-thumb-pending");
-        this.queueThumbnailBackfill(sketch);
+        thumb.dataset.sketchId = sketch.id;
+        this.observeThumbnailPending(thumb, sketch);
       }
 
       const score = this.ratingValue(sketch.rating);
@@ -467,20 +472,41 @@ class ShaderMindUI {
     return `${state.generationCount}:${(state.strategyTimeline || []).length}:${good.length}:${withThumb}`;
   }
 
+  thumbnailNeedsUpgrade(thumbnail) {
+    return !thumbnail || thumbnail.length < THUMB_LEGACY_MAX_CHARS;
+  }
+
   sketchNeedsThumbnail(sketch) {
-    if (!sketch?.id || sketch.thumbnail) return false;
+    if (!sketch?.id) return false;
     if (this.ratingValue(sketch.rating) < 4) return false;
     if (this.thumbBackfillAttempted.has(sketch.id)) return false;
     if (sketch.compile?.success === false) return false;
-    return true;
+    return this.thumbnailNeedsUpgrade(sketch.thumbnail);
   }
 
-  seedThumbnailBackfill() {
-    const pending = this.sketches.filter(s => this.sketchNeedsThumbnail(s));
-    const seedKey = `${pending.length}:${pending.map(s => s.id).join(",")}`;
-    if (seedKey === this.thumbBackfillSeedKey) return;
-    this.thumbBackfillSeedKey = seedKey;
-    pending.forEach(s => this.queueThumbnailBackfill(s));
+  ensureThumbObserver() {
+    if (this.thumbObserver || typeof IntersectionObserver === "undefined") return;
+    this.thumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const sketchId = entry.target.dataset.sketchId;
+        const sketch = this.sketches.find(s => s.id === sketchId)
+          || this.galleryItems.find(s => s.id === sketchId);
+        if (sketch) this.queueThumbnailBackfill(sketch);
+        this.thumbObserver.unobserve(entry.target);
+      }
+    }, { rootMargin: "100px", threshold: 0.08 });
+  }
+
+  observeThumbnailPending(element, sketch) {
+    if (!element || !this.sketchNeedsThumbnail(sketch)) return;
+    element.dataset.sketchId = sketch.id;
+    this.ensureThumbObserver();
+    if (this.thumbObserver) {
+      this.thumbObserver.observe(element);
+      return;
+    }
+    this.queueThumbnailBackfill(sketch);
   }
 
   async poll() {
@@ -523,10 +549,6 @@ class ShaderMindUI {
         if (state.generationCount !== this.lastGen) {
           this.lastGen = state.generationCount;
         }
-      }
-
-      if (this.currentPage === "gallery") {
-        this.seedThumbnailBackfill();
       }
 
       const busy = ["generating", "waiting"].includes(autopilot.phase);
@@ -881,13 +903,57 @@ class ShaderMindUI {
       : "Rate every shader from 1 to 5";
   }
 
-  async captureSketchThumbnail(sketch) {
+  captureDialogThumbnail() {
+    if (!this.dialogRenderer?.program) return null;
+    return this.dialogRenderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
+  }
+
+  async captureSketchThumbnail(sketch, { preferDialog = false } = {}) {
+    if (preferDialog && this.dialogRenderer?.program && this.dialogSketchId === sketch.id) {
+      const fromDialog = this.captureDialogThumbnail();
+      if (fromDialog) return fromDialog;
+    }
+
     const grid = getSharedGridRenderer();
     if (grid.hasCell(sketch.id)) {
-      const fromGrid = grid.captureCellThumbnail(sketch.id, THUMB_SIZE, THUMB_TIME, THUMB_QUALITY);
+      const fromGrid = grid.captureCellThumbnail(
+        sketch.id,
+        THUMB_CAPTURE_SIZE,
+        THUMB_TIME,
+        THUMB_QUALITY
+      );
       if (fromGrid) return fromGrid;
     }
     return this.renderOffscreenThumbnail(sketch);
+  }
+
+  async persistSketchThumbnail(sketch, thumbnail) {
+    if (!sketch?.id || !thumbnail) return false;
+    sketch.thumbnail = thumbnail;
+
+    const local = this.sketches.find(s => s.id === sketch.id);
+    if (local) local.thumbnail = thumbnail;
+
+    const batch = this.activeBatch?.find(s => s.id === sketch.id);
+    if (batch) batch.thumbnail = thumbnail;
+
+    try {
+      const res = await fetch("/api/sketches/thumbnail", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: sketch.id, thumbnail })
+      });
+      if (!res.ok) return false;
+      this.thumbBackfillAttempted.add(sketch.id);
+      this.refreshTimelineThumb(sketch.id, thumbnail);
+      if (this.dialogSketchId === sketch.id && this.els.dialogPoster) {
+        this.showDialogPoster(thumbnail);
+      }
+      return true;
+    } catch (err) {
+      console.warn("Thumbnail upload failed:", err.message);
+      return false;
+    }
   }
 
   async ensureBatchThumbnails(batch, ratings) {
@@ -895,7 +961,7 @@ class ShaderMindUI {
     for (const sketch of batch) {
       if (this.ratingValue(ratings[sketch.id]) < 4) continue;
       let thumb = sketch.thumbnail || null;
-      if (!thumb) {
+      if (this.thumbnailNeedsUpgrade(thumb)) {
         thumb = await this.captureSketchThumbnail(sketch);
         if (thumb) sketch.thumbnail = thumb;
       }
@@ -923,25 +989,13 @@ class ShaderMindUI {
       if (!sketch || !this.sketchNeedsThumbnail(sketch)) continue;
 
       const thumb = await this.captureSketchThumbnail(sketch);
-      this.thumbBackfillAttempted.add(sketch.id);
-      if (!thumb) continue;
-
-      sketch.thumbnail = thumb;
-      const local = this.sketches.find(s => s.id === sketch.id);
-      if (local) local.thumbnail = thumb;
-
-      try {
-        await fetch("/api/sketches/thumbnail", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id: sketch.id, thumbnail: thumb })
-        });
-        this.refreshTimelineThumb(sketch.id, thumb);
-      } catch (err) {
-        console.warn("Thumbnail upload failed:", err.message);
+      if (!thumb) {
+        this.thumbBackfillAttempted.add(sketch.id);
+        continue;
       }
 
-      await new Promise(r => window.setTimeout(r, 200));
+      await this.persistSketchThumbnail(sketch, thumb);
+      await new Promise(r => window.setTimeout(r, 350));
     }
 
     this.thumbBackfillBusy = false;
@@ -949,20 +1003,44 @@ class ShaderMindUI {
 
   async renderOffscreenThumbnail(sketch) {
     const canvas = document.createElement("canvas");
-    canvas.width = THUMB_SIZE;
-    canvas.height = THUMB_SIZE;
-    canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_SIZE}px;height:${THUMB_SIZE}px;pointer-events:none;`;
+    canvas.width = THUMB_CAPTURE_SIZE;
+    canvas.height = THUMB_CAPTURE_SIZE;
+    canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_CAPTURE_SIZE}px;height:${THUMB_CAPTURE_SIZE}px;pointer-events:none;`;
     document.body.appendChild(canvas);
 
     const renderer = new ShaderRenderer(canvas, { silent: true });
     try {
       const ok = await renderer.compile(sketch.glsl);
       if (!ok) return null;
-      return renderer.captureThumbnail(THUMB_SIZE, THUMB_TIME, THUMB_QUALITY);
+      return renderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
     } finally {
       renderer.destroy();
       canvas.remove();
     }
+  }
+
+  showDialogPoster(thumbnail) {
+    if (!this.els.dialogPoster || !thumbnail) return;
+    this.els.dialogPoster.src = thumbnail;
+    this.els.dialogPoster.hidden = false;
+    this.els.dialogPoster.classList.remove("is-hidden");
+  }
+
+  hideDialogPoster() {
+    if (!this.els.dialogPoster) return;
+    this.els.dialogPoster.classList.add("is-hidden");
+    window.setTimeout(() => {
+      if (this.els.dialogPoster?.classList.contains("is-hidden")) {
+        this.els.dialogPoster.hidden = true;
+      }
+    }, 360);
+  }
+
+  clearDialogPoster() {
+    if (!this.els.dialogPoster) return;
+    this.els.dialogPoster.hidden = true;
+    this.els.dialogPoster.classList.remove("is-hidden");
+    this.els.dialogPoster.removeAttribute("src");
   }
 
   refreshTimelineThumb(sketchId, thumbnail) {
@@ -1012,7 +1090,8 @@ class ShaderMindUI {
     } else {
       thumb.classList.add("timeline-thumb-pending");
       thumb.dataset.pending = "1";
-      this.queueThumbnailBackfill(sketch);
+      thumb.dataset.sketchId = sketch.id;
+      this.observeThumbnailPending(thumb, sketch);
     }
 
     thumb.addEventListener("click", () => this.openDialog(sketch, window.scrollY));
@@ -1268,6 +1347,11 @@ class ShaderMindUI {
     this.dialogRenderer = null;
     this.dialogOwnedRenderer = false;
     this.dialogSketchId = null;
+    this.clearDialogPoster();
+    if (this.els.dialogCanvas) {
+      this.els.dialogCanvas.hidden = false;
+      this.els.dialogCanvas.style.opacity = "";
+    }
     this.resumeSharedGrid();
     this.drainThumbnailBackfill();
   }
@@ -1400,6 +1484,13 @@ class ShaderMindUI {
     this.els.dialogLoading.hidden = false;
     this.els.dialogHint.hidden = true;
     this.els.dialogCanvas.hidden = false;
+    this.els.dialogCanvas.style.opacity = resolved.thumbnail ? "0" : "1";
+
+    if (resolved.thumbnail) {
+      this.showDialogPoster(resolved.thumbnail);
+    } else {
+      this.clearDialogPoster();
+    }
 
     this.suspendSharedGrid();
     this.lockBodyScroll(openScrollY);
@@ -1416,7 +1507,33 @@ class ShaderMindUI {
     this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
       errorEl: this.els.dialogError,
       loadingEl: this.els.dialogLoading,
-      hintEl: this.els.dialogHint
+      hintEl: this.els.dialogHint,
+      onCompileResult: async (result) => {
+        if (this.dialogSketchId !== resolved.id) return;
+
+        if (result.success) {
+          this.els.dialogCanvas.style.opacity = "1";
+          this.hideDialogPoster();
+          if (this.sketchNeedsThumbnail(resolved) || this.thumbnailNeedsUpgrade(resolved.thumbnail)) {
+            const thumb = this.captureDialogThumbnail();
+            if (thumb) {
+              resolved.thumbnail = thumb;
+              await this.persistSketchThumbnail(resolved, thumb);
+            }
+          }
+          return;
+        }
+
+        if (resolved.thumbnail) {
+          this.els.dialogCanvas.hidden = true;
+          this.els.dialogLoading.hidden = true;
+          this.showDialogPoster(resolved.thumbnail);
+          if (this.els.dialogHint) {
+            this.els.dialogHint.hidden = false;
+            this.els.dialogHint.textContent = "static preview — live compile failed in this browser";
+          }
+        }
+      }
     });
     this.dialogOwnedRenderer = true;
     this.dialogRenderer.compileWhenReady(resolved.glsl);
