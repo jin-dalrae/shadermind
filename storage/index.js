@@ -112,8 +112,7 @@ export function getStorageDiagnostics() {
     mode: storageMode || "unknown",
     mongoConfigured: Boolean(process.env.MONGODB_URI),
     mongoDb: process.env.MONGODB_DB || "shadermind",
-    mongoError: lastMongoError,
-    usingFallback: Boolean(process.env.MONGODB_URI) && storageMode === "json"
+    mongoError: lastMongoError
   };
 }
 
@@ -136,20 +135,24 @@ export function createStorage() {
   return storageInstance;
 }
 
-async function fallbackToJson(reason) {
-  lastMongoError = reason;
-  console.error(`[Storage] MongoDB unavailable (${reason}) — falling back to database.json`);
-  const prev = storageInstance;
-  storageInstance = null;
-  storageMode = null;
-  if (prev?.close) {
-    try {
-      await prev.close();
-    } catch {
-      // ignore close errors during failover
-    }
+function failMongo(message) {
+  lastMongoError = message;
+  const dbName = process.env.MONGODB_DB || "shadermind";
+  throw new Error(
+    `MongoDB required (db=${dbName}) but unavailable: ${message}. `
+    + "Fix MONGODB_URI, Atlas network access, or credentials — no JSON fallback."
+  );
+}
+
+/** Fail fast at boot when MONGODB_URI is set — production must not silently use database.json. */
+export async function assertStorageReady() {
+  if (!process.env.MONGODB_URI) return;
+  try {
+    lastMongoError = null;
+    await createStorage().load();
+  } catch (err) {
+    failMongo(err.message);
   }
-  return createJsonStorageInstance().load();
 }
 
 export async function loadDB() {
@@ -162,7 +165,7 @@ export async function loadDB() {
     lastMongoError = null;
     return await storage.load();
   } catch (err) {
-    return fallbackToJson(err.message);
+    failMongo(err.message);
   }
 }
 
@@ -175,7 +178,6 @@ export async function saveDB(data) {
   try {
     return await storage.save(data);
   } catch (err) {
-    console.warn(`[Storage] MongoDB save failed (${err.message}) — writing to database.json`);
-    return fallbackToJson(err.message).then(() => createJsonStorageInstance().save(data));
+    failMongo(err.message);
   }
 }

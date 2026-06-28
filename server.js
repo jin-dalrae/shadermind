@@ -2,7 +2,14 @@ import express from "express";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
-import { loadDB, saveDB, createStorage, getStorageMode, getStorageDiagnostics } from "./storage/index.js";
+import {
+  loadDB,
+  saveDB,
+  createStorage,
+  getStorageMode,
+  getStorageDiagnostics,
+  assertStorageReady
+} from "./storage/index.js";
 import { DEFAULT_DB } from "./storage/default-db.js";
 import { runInference, runInferenceBatch, setSessionAffinity, getAIConfig, getTaskModels } from "./lib/ai.js";
 import { parseJsonFromModel } from "./lib/json.js";
@@ -1251,7 +1258,6 @@ app.get("/api/health", async (req, res) => {
       storage: storage.mode,
       mongoConfigured: storage.mongoConfigured,
       mongoDb: storage.mongoDb,
-      mongoFallback: storage.usingFallback,
       mongoError: storage.mongoError,
       ratingScale: "1-5",
       generationCount: db.generationCount,
@@ -1660,7 +1666,8 @@ Summarize what happened and what you learned.`;
 
 const server = app.listen(PORT, "0.0.0.0", () => {
   bootServer().catch((err) => {
-    console.error("Startup failed:", err);
+    console.error("Startup failed:", err.message || err);
+    process.exit(1);
   });
 });
 
@@ -1675,6 +1682,8 @@ async function bootServer() {
     console.log(`Deploy: DigitalOcean App Platform (app ${process.env.DO_APP_ID})`);
   }
 
+  await assertStorageReady();
+
   if (!process.env.DIGITAL_OCEAN_MODEL_ACCESS_KEY) {
     console.warn("WARNING: DIGITAL_OCEAN_MODEL_ACCESS_KEY is required for inference.");
     return;
@@ -1682,8 +1691,8 @@ async function bootServer() {
 
   if (process.env.DO_APP_ID && !process.env.MONGODB_URI) {
     console.warn(
-      "WARNING: MONGODB_URI is not set on App Platform — using bundled database.json. "
-      + "Local MongoDB progress will NOT appear in production. Add MONGODB_URI as an app secret."
+      "WARNING: MONGODB_URI is not set on App Platform — using bundled database.json only. "
+      + "Set MONGODB_URI as an app secret for production parity with Atlas."
     );
   }
 
