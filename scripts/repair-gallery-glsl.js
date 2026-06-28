@@ -1,29 +1,18 @@
 /**
  * Repair stored GLSL for broken gallery sketches, verify in headless WebGL, persist to Mongo.
+ * Unfixable shaders are deleted — no placeholder substitution.
  * Usage: node scripts/repair-gallery-glsl.js
  */
 import "dotenv/config";
 import { chromium } from "playwright";
 import { MongoClient } from "mongodb";
-import { decodeGlslField } from "../lib/glsl.js";
-import { patchGlslForWebGL } from "../public/glsl-patch.js";
+import { decodeGlslField, isPlaceholderGlsl } from "../lib/glsl.js";
 import { execSync } from "child_process";
 import path from "path";
 import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
-const FALLBACK = `precision mediump float;
-uniform float u_time;
-uniform vec2 u_resolution;
-uniform vec2 u_mouse;
-void main() {
-  vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-  vec2 p = uv * 2.0 - 1.0;
-  p.x *= u_resolution.x / u_resolution.y;
-  float ripple = sin(length(p) * 10.0 - u_time * 0.6) * 0.5 + 0.5;
-  gl_FragColor = vec4(vec3(0.15, 0.35, 0.55) * ripple + vec3(0.05), 1.0);
-}`;
+const AGENT_ID = "shadermind";
 
 function repairGlsl(raw) {
   return decodeGlslField(raw);
@@ -54,17 +43,25 @@ async function main() {
 
   const client = new MongoClient(process.env.MONGODB_URI);
   await client.connect();
-  const col = client.db(process.env.MONGODB_DB || "shadermind").collection("sketches");
+  const db = client.db(process.env.MONGODB_DB || "shadermind");
+  const col = db.collection("sketches");
   const sketches = await col.find({}).toArray();
 
   const browser = await chromium.launch({ headless: true, args: ["--use-gl=angle"] });
   const page = await browser.newPage();
 
   let updated = 0;
-  let fallbacks = 0;
+  let removed = 0;
 
   for (const sketch of sketches) {
     if (typeof sketch.glsl !== "string") continue;
+
+    if (isPlaceholderGlsl(sketch.glsl)) {
+      await col.deleteOne({ id: sketch.id });
+      removed += 1;
+      console.log(`${sketch.id}: removed (placeholder)`);
+      continue;
+    }
 
     const patched = repairGlsl(sketch.glsl);
     let check = await compileCheck(page, patched);
@@ -74,13 +71,10 @@ async function main() {
       console.log(
         `${sketch.id}: ${(check.log || "compile failed").replace(/\s+/g, " ").slice(0, 140)}`
       );
-      finalGlsl = FALLBACK;
-      check = await compileCheck(page, finalGlsl);
-      if (!check.ok) {
-        console.log(`${sketch.id}: fallback also failed — skip`);
-        continue;
-      }
-      fallbacks += 1;
+      await col.deleteOne({ id: sketch.id });
+      removed += 1;
+      console.log(`${sketch.id}: removed (unfixable)`);
+      continue;
     }
 
     if (
@@ -106,13 +100,19 @@ async function main() {
 
     await col.updateOne({ id: sketch.id }, update);
     updated += 1;
-    console.log(`${sketch.id}: saved${finalGlsl === FALLBACK ? " (fallback)" : ""}`);
+    console.log(`${sketch.id}: saved`);
   }
+
+  const remaining = await col.countDocuments();
+  await db.collection("agent_state").updateOne(
+    { _id: AGENT_ID },
+    { $set: { totalSketches: remaining } }
+  );
 
   await browser.close();
   await client.close();
 
-  console.log(`Done. ${updated} sketch(s) updated, ${fallbacks} fallback(s).`);
+  console.log(`Done. ${updated} repaired, ${removed} removed. ${remaining} sketches remain.`);
 
   execSync(`node scripts/migrate-thumbnails-playwright.js ${base}`, {
     stdio: "inherit",

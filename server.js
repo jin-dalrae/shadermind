@@ -358,38 +358,6 @@ Evaluate your active strategy, apply your learned heuristics, and generate exact
   return { systemPrompt, userPrompt };
 }
 
-const FALLBACK_GLSL = [
-  `precision mediump float;
-uniform float u_time;
-uniform vec2 u_resolution;
-uniform vec2 u_mouse;
-void main() {
-  vec2 uv = (gl_FragCoord.xy - 0.5 * u_resolution.xy) / u_resolution.y;
-  float t = u_time * 0.3;
-  float m = length(uv - (u_mouse - 0.5) * 0.4);
-  float wave = sin(uv.x * 6.0 + t) * cos(uv.y * 5.0 - t * 0.7);
-  float glow = exp(-m * 3.0) * 0.6;
-  vec3 col = vec3(0.9, 0.5, 0.2) * (0.4 + 0.6 * wave) + vec3(0.1, 0.4, 0.5) * glow;
-  gl_FragColor = vec4(col, 1.0);
-}`,
-  `precision mediump float;
-uniform float u_time;
-uniform vec2 u_resolution;
-uniform vec2 u_mouse;
-void main() {
-  vec2 uv = gl_FragCoord.xy / u_resolution.xy;
-  vec2 p = uv * 2.0 - 1.0;
-  p.x *= u_resolution.x / u_resolution.y;
-  float a = atan(p.y, p.x);
-  float r = length(p);
-  float ripple = sin(r * 12.0 - u_time * 0.8 + a * 2.0) * 0.5 + 0.5;
-  float mouseGlow = 1.0 - smoothstep(0.0, 0.35, length(p - (u_mouse * 2.0 - 1.0)));
-  vec3 col = mix(vec3(0.05, 0.1, 0.15), vec3(0.2, 0.7, 0.8), ripple);
-  col += vec3(1.0, 0.7, 0.3) * mouseGlow * 0.4;
-  gl_FragColor = vec4(col, 1.0);
-}`
-];
-
 async function generateBatchFast(db, userFocus, genNum, patternPlan) {
   const { evolutionary, directive, mutation } = getBatchDistribution();
   const memory = assembleWorkingMemory(db, { userOpinion: userFocus });
@@ -462,15 +430,8 @@ Output raw JSON array only.`;
   }
 
   const items = parsed.slice(0, BATCH_SIZE);
-  while (items.length < BATCH_SIZE) {
-    items.push({
-      title: `Fallback Sketch ${items.length + 1}`,
-      type: sketchTypeForIndex(items.length),
-      hypothesis: "Safe fallback pattern.",
-      dna: ["fallback", "waves"],
-      glsl: FALLBACK_GLSL[items.length % FALLBACK_GLSL.length],
-      poetic_statement: ""
-    });
+  if (!items.length) {
+    throw new Error("Fast batch returned no shader concepts.");
   }
 
   autopilot.generationProgress = `validating ${items.length} shaders`;
@@ -500,18 +461,16 @@ Output raw JSON array only.`;
       }
 
       if (!validation.valid) {
-        console.warn(`Fast batch #${idx + 1} invalid (${validation.reason}), using fallback`);
-        glsl = FALLBACK_GLSL[idx % FALLBACK_GLSL.length];
-      } else {
-        glsl = validation.code;
+        console.warn(`Fast batch #${idx + 1} invalid (${validation.reason}), skipping`);
+        return { m, idx, glsl: null };
       }
 
-      return { m, idx, glsl };
+      return { m, idx, glsl: validation.code };
     }),
     GLSL_CONCURRENCY
   );
 
-  return glslResults.map(({ m, idx, glsl }) => attachPatternToSketch({
+  return glslResults.filter(({ glsl }) => glsl).map(({ m, idx, glsl }) => attachPatternToSketch({
     id: `sketch-gen${genNum}-${idx + 1}`,
     title: m.title || `Untitled Sketch #${idx + 1}`,
     type: m.type || sketchTypeForIndex(idx),
@@ -576,24 +535,6 @@ function buildLearningContext(type, examples, exampleContext, similarity) {
     similarityScore: similarity?.score ?? null,
     similaritySourceId: similarity?.id ?? null,
     similarityWarning: (similarity?.score ?? 0) >= SHADER_SIMILARITY_THRESHOLD
-  };
-}
-
-function fallbackGeneratedSketch(glsl, genNum, index, type) {
-  return {
-    glsl,
-    prompt: `Fallback for generation ${genNum}, shader ${index + 1}`,
-    codeFeatures: extractCodeFeatures(glsl),
-    learningContext: {
-      preferenceMemoryVersion: 0,
-      exampleIds: [],
-      retrievalScores: [],
-      contextCharacters: 0,
-      policy: type === "mutation" ? "explore" : type === "directive" ? "directive" : "exploit",
-      similarityScore: null,
-      similaritySourceId: null,
-      similarityWarning: false
-    }
   };
 }
 
@@ -788,13 +729,8 @@ async function generateBatchInternal(db, userFocus) {
         try {
           generated = await generateGlslForSketch(meta, db, userFocus, genNum, idx);
         } catch (err) {
-          console.warn(`GLSL generation failed for #${idx + 1}, using fallback:`, err.message);
-          generated = fallbackGeneratedSketch(
-            FALLBACK_GLSL[idx % FALLBACK_GLSL.length],
-            genNum,
-            idx,
-            sketchType
-          );
+          console.warn(`GLSL generation failed for #${idx + 1}, skipping:`, err.message);
+          generated = null;
         }
         completed += 1;
         autopilot.generationProgress = `${completed}/${metadata.length} shaders`;
@@ -804,7 +740,7 @@ async function generateBatchInternal(db, userFocus) {
       GLSL_CONCURRENCY
     );
 
-    sketches = glslResults.map(({ m, idx, generated }) => attachPatternToSketch({
+    sketches = glslResults.filter(({ generated }) => generated?.glsl).map(({ m, idx, generated }) => attachPatternToSketch({
       id: `sketch-gen${genNum}-${idx + 1}`,
       title: m.title || `Untitled Sketch #${idx + 1}`,
       type: m.type || sketchTypeForIndex(idx),

@@ -282,8 +282,6 @@ class ShaderMindUI {
         img.alt = sketch.title || "";
         img.loading = "lazy";
         thumb.appendChild(img);
-      } else if (this.thumbBackfillAttempted.has(sketch.id)) {
-        thumb.classList.add("archive-thumb-empty");
       } else {
         thumb.classList.add("archive-thumb-pending");
         thumb.dataset.sketchId = sketch.id;
@@ -1094,13 +1092,12 @@ class ShaderMindUI {
     const cell = this.els.archiveGrid?.querySelector(`[data-id="${sketchId}"] .archive-thumb`);
     if (!cell) return;
     cell.classList.remove("archive-thumb-pending");
-    cell.classList.add("archive-thumb-empty");
   }
 
   refreshGalleryThumb(sketchId, thumbnail) {
     const cell = this.els.archiveGrid?.querySelector(`[data-id="${sketchId}"] .archive-thumb`);
     if (!cell || !thumbnail) return;
-    cell.classList.remove("archive-thumb-pending", "archive-thumb-empty");
+    cell.classList.remove("archive-thumb-pending");
     let img = cell.querySelector("img");
     if (!img) {
       img = document.createElement("img");

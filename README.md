@@ -39,9 +39,10 @@ Under the hood, preference memory follows [PLUS](https://arxiv.org/abs/2507.1357
 
 1. Open the **Studio** — live WebGL shaders animate with `u_time`, `u_resolution`, `u_mouse`.
 2. Rate every shader **1–5**, add an optional note, hit **Submit & next batch**.
-3. Scroll **Mind** — heuristics distilled from your rating distribution.
-4. Scroll **Evolution** — generation milestones with thumbnails of high-rated work.
-5. Click **Explain artistic evolution** — the agent narrates its own arc.
+3. Or click **Talk to ShaderMind** — a LiveKit voice curator joins the room, asks about your taste, and submits ratings on your behalf (uses MiniMax TTS).
+4. Scroll **Mind** — heuristics, **`preferenceMemory.prefer[]` / `avoid[]`** with evidence, curated **pattern library** ranked by your ratings, reflection log.
+5. Scroll **Evolution** — generation milestones with thumbnails of high-rated work and the per-shetch critique diff.
+6. Click **Explain artistic evolution** — the agent narrates its own arc.
 
 The artifact isn't one pretty shader. It's **you**, learning taste through a tool that draws — sketch by sketch, change by change.
 
@@ -51,18 +52,20 @@ The artifact isn't one pretty shader. It's **you**, learning taste through a too
 
 ```mermaid
 flowchart LR
-  A[Generate GLSL batch] --> B[Human rates 1–5]
-  B --> C[Save ratings + compile results + thumbnails]
-  C --> D[Build preference memory + evolve strategy]
-  D --> E[Update heuristics]
-  E --> A
+  A[Generate GLSL batch] --> B[Studio renders + compile evidence]
+  B --> C[Human rates 1–5 or voice curator submits]
+  C --> D[Save ratings + compile results + thumbnails]
+  D --> E[Per-sketch critique batched Gemini call]
+  E --> F[Build preferenceMemory + evolve strategy]
+  F --> G[Maybe consolidate memory every N gens]
+  G --> A
 ```
 
-**Human-in-the-loop by default** — the agent never auto-rates your batch unless you switch to autonomous/hybrid mode.
+**Human-in-the-loop by default** — the agent never auto-rates your batch unless you switch to `LEARNING_MODE=autonomous` (Gemini self-curates) or `hybrid` (auto-curate after `HYBRID_TIMEOUT_MS`).
 
-**Fast path** — one inference call writes a full batch of compile-ready shaders; strategy evolution runs in the background so the next batch starts immediately.
+**Fast path** — one inference call writes a full batch of compile-ready shaders; strategy evolution runs in the background so the next batch starts immediately. Set `EVOLUTION_ASYNC=true` (default).
 
-**Code-aware learning** — retrieval over past shaders, similarity checks, and preference memory inform staged generation and evolution.
+**Code-aware learning** — ranked retrieval over past shaders (40% tag, 20% technique, 15% curator confidence, 15% recency, 10% compile, minus cooldown), Jaccard similarity guard at 0.82 with novelty retry, and `preferenceMemory.prefer[]` / `avoid[]` weighted by `ratingSource` (explicit 1.0, autonomous 0.7, defaulted 0.35) feed staged generation and evolution. Compile-failed sketches are excluded from positive example retrieval even when rated 4–5.
 
 ---
 
@@ -70,12 +73,13 @@ flowchart LR
 
 | Region | What you get |
 |---|---|
-| **Studio** | Current batch in a full-width gallery; click any cell for detail view |
-| **Latest reflection** | Agent self-criticism after your last curation |
-| **Evolution** | Real milestones per generation — notes + thumbnails of 4–5 rated shaders |
-| **Mind** | Learned heuristics, reflection log, artistic monologue |
+| **Studio** | Current batch in a full-width gallery (shared WebGL renderer, one offscreen context, `readPixels` blit); click any cell for fullscreen `<dialog>` view; **Talk to ShaderMind** button opens a LiveKit voice room |
+| **Latest reflection** | Agent self-criticism after your last curation + active strategy genome + preference memory summary |
+| **Evolution** | Real milestones per generation — notes, curator source, rating distribution, thumbnails of high-rated work, per-shetch critique diff |
+| **Mind** | Learned heuristics, **`preferenceMemory.prefer[]` / `avoid[]`** with evidence, curated **pattern library** ranked by rating × usage, reflection log, **Explain artistic evolution** monologue |
+| **Voice Curator** | LiveKit room `shadermind-gen-{N}`; Gemini-powered agent with MiniMax TTS joins on demand, holds a conversation about your taste, submits ratings via the same `/api/feedback` endpoint |
 
-Batch composition (configurable, default **3**): evolutionary remixes from approved shaders, directive responses to your notes, and mutation sketches with an explicit hypothesis on the card.
+Batch composition (configurable, default **3**): evolutionary remixes from approved shaders, directive responses to your notes, and mutation sketches with an explicit hypothesis on the card. Set `BATCH_SIZE=10` for the canonical 5 evolutionary / 3 directive / 2 mutation mix.
 
 ---
 
@@ -150,18 +154,24 @@ Each sketch also gets **DNA tags**: 2–4 lowercase words for concrete math/colo
 
 ### AI provider & models
 
-**Primary:** DigitalOcean Inference (`https://inference.do-ai.run/v1`) via `lib/ai.js`.
+**Primary:** DigitalOcean Inference (`https://inference.do-ai.run/v1`) via `lib/ai.js`. Set `DO_INFERENCE_ROUTER` to route every task through a single DO Inference Router (`router:{name}` header).
 
 | Task | Env override | Default model pool |
 |------|--------------|-------------------|
 | GLSL (fast batch + per-shader) | `DO_MODELS_GLSL` | `qwen3-coder-flash` → `glm-5.2` → `llama3.3-70b-instruct` |
 | Metadata planning (staged) | `DO_MODELS_PLANNING` | `qwen3-coder-flash` → `llama3.3-70b-instruct` → `mistral-3-14B` |
+| Strategy evolution | `DO_MODELS_EVOLUTION` | `deepseek-4-flash` → `llama-4-maverick` → `llama3.3-70b-instruct` |
+| Autonomous curation | `DO_MODELS_CURATION` | `llama3.3-70b-instruct` → `mistral-3-14B` → `deepseek-4-flash` |
+| Artistic monologue | `DO_MODELS_NARRATIVE` | `llama-4-maverick` → `deepseek-4-flash` → `llama3.3-70b-instruct` |
+| Memory consolidation | `DO_MODELS_CONSOLIDATION` | `deepseek-4-flash` → `llama3.3-70b-instruct` |
 
-**Fast batch** uses only the **first** GLSL model (`getTaskModels("glsl").slice(0, 1)`).  
-**Per-shader** uses first model on attempt 1; later attempts fall through the full pool.  
-**Optional fallback:** `ALLOW_GEMINI_FALLBACK=true` + `GEMINI_API_KEY` → Gemini (`GEMINI_GLSL_MODEL`, default `gemini-3.5-flash`) after DO pool exhaustion.
+**Fast batch** uses only the **first** GLSL model (`getTaskModels("glsl").slice(0, 1)`).
+**Per-shader** uses first model on attempt 1; later attempts fall through the full pool.
+**Optional fallback:** `ALLOW_GEMINI_FALLBACK=true` + `GEMINI_API_KEY` → Gemini (`GEMINI_GLSL_MODEL`, default `gemini-3.5-flash`) after DO pool exhaustion. Default `GEMINI_MODEL` is also `gemini-3.5-flash` for planning/curation/evolution/narrative.
 
-Other knobs: `GLSL_MAX_TOKENS` (default 5000), `GLSL_MAX_ATTEMPTS` (default 2 per shader), `GLSL_CONCURRENCY` (default 3 parallel workers).
+**Voice curator:** the LiveKit agent in `agent/` (sibling project) runs Gemini for its conversation loop. Configure separately via `npm run agent:dev`.
+
+Other knobs: `GLSL_MAX_TOKENS` (default 5000), `GLSL_MAX_ATTEMPTS` (default 2 per shader), `GLSL_CONCURRENCY` (default 3 parallel workers), `AI_TIMEOUT_MS` (default 120000), `GEMINI_TIMEOUT_MS` (default 90000).
 
 ---
 
@@ -321,18 +331,21 @@ Generated shaders must declare these uniforms and write only to `gl_FragColor` i
 
 ### What changes the *next* batch (learning → generation)
 
-Generation prompts read persisted state from MongoDB / `database.json`:
+Generation prompts read persisted state from MongoDB / SQLite / `database.json`:
 
 | Field | Role in GLSL prompts |
 |-------|---------------------|
-| `currentStrategy` | Long aesthetic genome — trimmed per prompt |
-| `heuristics[]` | Short rules with approval context |
-| `preferenceMemory` | Prefer/avoid rules from 1–5 ratings (`buildPreferenceSummary`) |
-| `memoryRollups[]` | Compressed history every `CONSOLIDATION_EVERY_N` gens (default 25) |
-| Sketches rated ≥ 4 | Remix parents, retrieval examples, fast-mode seed titles |
+| `currentStrategy` | Long aesthetic genome — sanitized against banned jargon, capped at 120 words / 500 chars in prompt |
+| `heuristics[]` | Short rules (≤4) with rating-summary context |
+| `preferenceMemory` | Prefer/avoid rules from 1–5 ratings (`buildPreferenceSummary`), weighted by `ratingSource` |
+| `memoryRollups[]` | Compressed semantic memory every `CONSOLIDATION_EVERY_N` gens (default 25) |
+| `patternStats` | Ranked shader pattern library — top patterns injected as a prompt block per slot |
+| `LEARNOPENGL_*` | LearnOpenGL discipline block ("linear lighting math, then gamma once at end") |
+| `shader-tutorial` | Curriculum-sourced tutorial block, capped per request via `curriculumCount` |
+| Sketches rated ≥ 4 | Remix parents for evolutionary slots; ranked examples injected up to `LEARNING_CONTEXT_CHARS` (default 9000 chars) for staged mode; fast mode gets title + DNA only |
 | `lastHumanOpinion` | Curator note → directive focus |
 
-After you submit ratings, `processFeedbackAndEvolve()` updates strategy/heuristics/preference memory (async when `EVOLUTION_ASYNC=true`, default). The **next** `generateBatchInternal()` call reads the updated DB — evolution does not rewrite shaders already in the current batch.
+After you submit ratings, `processFeedbackAndEvolve()` updates strategy / heuristics / preference memory (async when `EVOLUTION_ASYNC=true`, default). The **next** `generateBatchInternal()` call reads the updated DB — evolution does not rewrite shaders already in the current batch. `waitForEvolutionComplete()` serializes generation behind evolution so each new batch sees the prior cycle's full memory update.
 
 ---
 
@@ -351,6 +364,28 @@ After you submit ratings, `processFeedbackAndEvolve()` updates strategy/heuristi
 | `SHADER_SIMILARITY_THRESHOLD` | `0.82` | Near-copy triggers novelty retry |
 | `DO_MODELS_GLSL` | see above | Comma-separated GLSL model pool |
 | `ALLOW_GEMINI_FALLBACK` | `false` | Gemini after DO exhaustion |
+
+### Storage backends
+
+`storage/index.js` is a factory picked by env vars. Order of precedence:
+
+| Priority | Triggered by | Behavior |
+|---|---|---|
+| 1 | `MONGODB_URI` set | **MongoDB Atlas** — fails fast on boot if unreachable. No silent JSON fallback in production. Optional `MONGODB_DB` (default `shadermind`). |
+| 2 | `USE_SQLITE=true` or `SQLITE_PATH` set | **SQLite** via `node:sqlite` (Node 22+). Optional JSON mirror via `JSON_MIRROR=true` for easy browsing. |
+| 3 | (neither) | **JSON-only** — `database.json` at `DB_PATH` (default `./database.json`). Fine for local dev. |
+
+Shared studio coordination: when `MONGODB_URI` points at Atlas, multiple instances (local dev + deployed) share `pendingBatch` and respect a `generationLock` so only one instance generates a given generation. Local dev defaults to non-autopilot mode when sharing Atlas with production — set `AUTOPILOT_LOCAL=true` to override.
+
+### Voice curator (LiveKit + Gemini agent)
+
+The Studio's **Talk to ShaderMind** button opens a LiveKit voice session in room `shadermind-gen-{N}`:
+
+- `POST /api/livekit/token` issues a participant JWT and returns the LiveKit URL.
+- The agent lives in `agent/` (sibling project). `npm run agent:dev` runs it locally against this server.
+- The agent runs a Gemini conversation loop, asks about the current batch's titles / DNA / hypothesis, and submits 1–5 ratings on the user's behalf via the same `POST /api/feedback`.
+- The agent speaks via **MiniMax TTS** (`MINIMAX_API_KEY`, default model `speech-02-turbo`).
+- Required env: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_AGENT_NAME`, `SHADERMIND_PUBLIC_URL`, `SHADERMIND_API_URL`. The button silently no-ops when any required LiveKit env is missing.
 
 ---
 
@@ -415,14 +450,14 @@ Full list in [`.env.example`](.env.example).
 
 ## Hackathon alignment
 
-**Theme: Continual Learning** — ShaderMind adapts *how* it generates from real curation feedback: memory rollups, preference memory, heuristic extraction, strategy rewrites, and remix seeds from high-rated shaders.
+**Theme: Continual Learning** — ShaderMind adapts *how* it generates from real curation feedback. The system runs four memory layers — working (always-injected strategy + heuristics + preference summary), episodic (per-generation statistics + timeline), semantic (consolidated rollups every N gens), and archive (full sketches with GLSL + critique + codeFeatures + learningContext) — and evolves strategy, heuristics, `preferenceMemory`, and a curated pattern library between batches.
 
-**Research tie-in: PLUS** — Like PLUS's preference summaries, ShaderMind compresses curation history into interpretable text that conditions the next generation — not a frozen reward model.
+**Research tie-in: PLUS** — Like PLUS's preference summaries, ShaderMind compresses curation history into interpretable text that conditions the next generation — not a frozen reward model. PLUS analogue is `preferenceMemory.prefer[]` / `avoid[]` plus the sanitized `currentStrategy` genome. Code-aware retrieval, per-shetch critique, and similarity novelty retry extend PLUS into the source-code domain.
 
 **Prizes**
 
-- **DigitalOcean** — Inference-native stack, App Platform deploy, lightweight Node server
-- **Gemini** — Optional fallback path (`ALLOW_GEMINI_FALLBACK=true`)
+- **DigitalOcean** — Inference-native stack with per-task model pools (`qwen3-coder-flash`, `glm-5.2`, `llama-4-maverick`, etc.), App Platform deploy, lightweight Node server on `8080`. Inference Router supported via `DO_INFERENCE_ROUTER`.
+- **Gemini** — Optional fallback path (`ALLOW_GEMINI_FALLBACK=true`) after DO pool exhaustion; default `gemini-3.5-flash`. Also powers the voice curator agent via the LiveKit loop.
 
 ---
 
@@ -430,13 +465,63 @@ Full list in [`.env.example`](.env.example).
 
 ```
 shadermind/
-├── server.js              # Express API, autopilot loop, generation
-├── lib/                   # AI routing, GLSL validation, memory, learning engine
-├── public/                # Gallery UI, shared grid renderer, shader patcher
-├── storage/               # MongoDB + SQLite + JSON adapters
-├── test/                  # Learning engine tests
-├── scripts/               # migrate:mongo, repair:glsl
-└── work/                  # Agent handoff docs
+├── server.js                   # Express API, autopilot loop, generation, evolution
+├── lib/
+│   ├── ai.js                   # DO Inference client + Gemini fallback
+│   ├── glsl.js                 # decodeGlslField + validateGlsl + low-effort detector
+│   ├── json.js                 # Tolerant JSON parsing for model output
+│   ├── learning.js             # Public re-exports for lib/learning/
+│   ├── learning/               # Pure code-aware learning helpers
+│   │   ├── retrieval.js        # Ranked example selection + MMR diversity + cooldown
+│   │   ├── memory.js           # preferenceMemory build + summary
+│   │   ├── features.js         # Regex code-feature extraction + DNA normalization
+│   │   ├── similarity.js       # Jaccard 5-shingle similarity guard
+│   │   ├── critique.js         # Per-sketch critique labels + summary
+│   │   └── strategy.js         # Sanitizer + validator for evolved strategy
+│   ├── memory.js               # assembleWorkingMemory + buildRemixSection + consolidateMemory
+│   ├── math-cookbook.js        # Compact + full technique reference for prompts
+│   ├── learnopengl/            # LearnOpenGL discipline block injected into GLSL prompts
+│   ├── shader-tutorial/        # Shader-tutorial curriculum block
+│   ├── shader-library/         # Curated pattern catalog + rating-ranked selection
+│   └── livekit.js              # Voice curator token issuer
+├── public/                     # Vanilla frontend
+│   ├── index.html              # Single-page UI shell
+│   ├── index.css               # Editorial gallery styling
+│   ├── app.js                  # ShaderMindUI — 1–5 curation, polling, voice curator
+│   ├── shared-grid-renderer.js # Single-context WebGL grid (Chrome-safe readPixels blit)
+│   ├── shader-renderer.js      # Fullscreen dialog WebGL renderer
+│   ├── webgl-queue.js          # Context slot coordination (grid vs dialog)
+│   ├── glsl-patch.js           # Ashima helpers (mod289/permute) auto-injection
+│   ├── thumbnail-config.js     # Thumbnail capture constants
+│   └── voice-curator.js        # Talk to ShaderMind LiveKit client
+├── storage/                    # Storage adapters (factory)
+│   ├── index.js                # createStorage() — Mongo / SQLite / JSON
+│   ├── default-db.js           # Seed DEFAULT_DB + mergeWithDefaults
+│   ├── json-storage.js         # database.json read/write
+│   ├── json.js                 # In-memory JSON helpers
+│   ├── sqlite.js               # node:sqlite adapter (Node 22+)
+│   ├── mongo-storage.js        # MongoDB Atlas adapter
+│   └── mongo-sketch.js         # Sketch document serialization for Mongo
+├── test/                       # Node --test suites
+│   ├── learning.test.js        # Retrieval / memory / similarity / features
+│   ├── learning-loop.test.js   # End-to-end feedback → evolution flow
+│   ├── glsl.test.js            # Validation + sanitize + low-effort detector
+│   ├── learnopengl.test.js     # Curriculum block assembly
+│   ├── shader-library.test.js  # Pattern ranking + selection
+│   ├── shader-tutorial.test.js # Tutorial block assembly
+│   └── mongo-storage.test.js   # Storage adapter roundtrip
+├── scripts/
+│   ├── migrate-json-to-mongo.js  # database.json → Atlas migration
+│   ├── migrate-thumbnails-playwright.js # Catch-up missing sketch thumbnails
+│   ├── push-mongo-snapshot.js    # Push current DB snapshot to Atlas
+│   └── repair-glsl.js            # Bulk-validate + repair sketches
+├── agent/                      # Sibling project — LiveKit voice curator (Python)
+├── project_blueprint/           # PRD, pitch deck, hackathon criteria
+├── work/                       # Feature specs + implementation plan
+├── .do/app.yaml                 # DigitalOcean App Platform template
+├── Dockerfile                  # Container build
+├── .env.example                # Env template (matches server.js + lib/ai.js + livekit)
+└── package.json
 ```
 
 ---
