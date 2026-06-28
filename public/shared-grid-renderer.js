@@ -361,6 +361,41 @@ class SharedGridRenderer {
       this.animationFrameId = null;
     }
   }
+
+  /** Pause rendering and release WebGL so the dialog can claim a context. */
+  suspend() {
+    this.stop();
+    if (!this.gl) return;
+
+    const gl = this.gl;
+    for (const entry of this.programs.values()) {
+      if (entry?.program) gl.deleteProgram(entry.program);
+    }
+    this.programs.clear();
+
+    if (this.buffer) {
+      gl.deleteBuffer(this.buffer);
+      this.buffer = null;
+    }
+
+    const ext = gl.getExtension("WEBGL_lose_context");
+    if (ext) ext.loseContext();
+    this.gl = null;
+  }
+
+  /** Re-acquire WebGL after the dialog closes and repaint registered cells. */
+  resume() {
+    if (!this.gl) this.initGl();
+    if (!this.gl) return;
+
+    if (this.cells.size && !this.animationFrameId) this.start();
+
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        for (const id of this.cells.keys()) this.paintCell(id);
+      });
+    });
+  }
 }
 
 let instance = null;

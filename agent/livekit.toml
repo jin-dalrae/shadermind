@@ -1,0 +1,5 @@
+[project]
+  subdomain = "shadermind"
+
+[agent]
+  id = "shadermind-curator"

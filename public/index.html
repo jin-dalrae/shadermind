@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="index.css?v=5">
+  <link rel="stylesheet" href="index.css?v=8">
 </head>
 <body>
   <header class="site-header">
@@ -15,25 +15,37 @@
       <h1 class="logo">ShaderMind</h1>
       <p class="tagline">an agent that draws · you steer · it learns your taste</p>
     </div>
-    <div class="header-stats" id="headerStats">
-      <div class="stat"><span class="stat-label">generation</span><span class="stat-value" id="statGen">—</span></div>
-      <div class="stat"><span class="stat-label">sketches</span><span class="stat-value" id="statSketches">—</span></div>
-      <div class="stat"><span class="stat-label">favor</span><span class="stat-value" id="statFavor">—</span></div>
-    </div>
-    <div class="autopilot-pill" id="autopilotPill">
-      <span class="pill-dot" id="pillDot"></span>
-      <span id="pillText">connecting</span>
+    <nav class="site-nav" aria-label="Main">
+      <button type="button" class="nav-tab is-active" data-page="studio">Studio</button>
+      <button type="button" class="nav-tab" data-page="gallery">Gallery</button>
+      <button type="button" class="nav-tab" data-page="settings">Settings</button>
+    </nav>
+    <div class="header-right">
+      <div class="header-stats" id="headerStats">
+        <div class="stat"><span class="stat-label">generation</span><span class="stat-value" id="statGen">—</span></div>
+        <div class="stat"><span class="stat-label">sketches</span><span class="stat-value" id="statSketches">—</span></div>
+        <div class="stat"><span class="stat-label">favor</span><span class="stat-value" id="statFavor">—</span></div>
+      </div>
+      <div class="autopilot-pill" id="autopilotPill">
+        <span class="pill-dot" id="pillDot"></span>
+        <span id="pillText">connecting</span>
+      </div>
     </div>
   </header>
 
   <main>
-    <section class="gallery-section" id="sectionStudio">
-      <div class="gallery-bar">
+    <!-- Studio: current batch + curation -->
+    <section class="app-page page-studio is-active" id="pageStudio" data-page="studio">
+      <div class="studio-bar">
         <div>
-          <h2 class="gallery-title">Studio</h2>
-          <p class="gallery-sub" id="studioDesc">The agent drew these · rate them · shape your eye</p>
+          <h2 class="page-title page-title--dark">Studio</h2>
+          <p class="page-sub page-sub--dark" id="studioDesc">Current batch · rate 1–5 · submit to teach the agent</p>
         </div>
-        <div class="gallery-bar-right">
+        <div class="studio-bar-right">
+          <div class="voice-panel" id="voicePanel" hidden>
+            <button type="button" class="btn-voice" id="btnVoiceConnect" aria-pressed="false">Talk to ShaderMind</button>
+            <span class="voice-status" id="voiceStatus" hidden></span>
+          </div>
           <button type="button" class="btn-generate" id="btnGenerateNext" hidden>Generate next batch</button>
           <span class="batch-label" id="batchLabel">—</span>
           <div class="studio-status" id="studioStatus" hidden>
@@ -46,15 +58,15 @@
       <div class="shader-grid" id="shaderGrid"></div>
 
       <div class="empty-state" id="emptyState">
-        <p>No batch yet. Add GEMINI_API_KEY to generate new art, or refresh to view saved sketches.</p>
+        <p>No batch yet. Add GEMINI_API_KEY to generate new art, or open Gallery to browse saved sketches.</p>
       </div>
 
       <div class="curation-panel" id="curationPanel" hidden>
         <div class="curation-head">
           <h3>Your curation</h3>
-          <p>You're the artist here — the agent draws, you decide. Rate 1–5, add a note, and it learns your taste for the next sketch.</p>
+          <p>Rate every shader 1–5. The agent uses your scores and notes to steer the next batch.</p>
         </div>
-        <textarea id="userOpinion" placeholder="e.g. Slower motion, warmer ambers, less grid noise, more liquid flow…"></textarea>
+        <textarea id="userOpinion" placeholder="e.g. slower motion, warmer ambers, less grid noise, more liquid flow…"></textarea>
         <div class="curation-actions">
           <span class="curation-hint" id="curationHint">Rate every shader from 1 to 5</span>
           <button type="button" class="btn-regenerate" id="btnRegenerateBatch">Regenerate batch</button>
@@ -63,76 +75,154 @@
       </div>
     </section>
 
-    <div class="content-wrap">
-    <section class="reflection" id="sectionReflection">
-      <div class="section-head">
-        <h2>Latest notes</h2>
-      </div>
-      <blockquote class="reflection-text" id="reflectionText">
-        Waiting for the first batch.
-      </blockquote>
-      <details class="strategy-details">
-        <summary>Active strategy genome</summary>
-        <pre id="strategyText"></pre>
-      </details>
-    </section>
-
-    <section class="timeline" id="sectionTimeline">
-      <div class="section-head">
-        <h2>Evolution</h2>
-        <p class="section-desc">Strategy milestones across generations.</p>
-      </div>
-      <ol class="timeline-list" id="timelineList"></ol>
-    </section>
-
-    <section class="mind" id="sectionMind">
-      <div class="section-head">
-        <h2>Mind</h2>
-        <p class="section-desc">Learned heuristics and artistic memory.</p>
-      </div>
-
-      <ul class="heuristics-list" id="heuristicsList"></ul>
-
-      <div class="monologue-block">
-        <button type="button" class="btn-text" id="btnMonologue">Summarize learning so far</button>
-        <div class="monologue-output" id="monologueOutput" hidden>
-          <p id="monologueText"></p>
+    <!-- Gallery: archive + evolution -->
+    <section class="app-page page-gallery" id="pageGallery" data-page="gallery" hidden>
+      <div class="content-wrap">
+        <div class="gallery-page-head">
+          <div>
+            <h2 class="page-title">Gallery</h2>
+            <p class="page-sub">Saved sketches and strategy milestones across generations.</p>
+          </div>
+          <div class="gallery-filters">
+            <label class="filter-field">
+              <span>Generation</span>
+              <select id="galleryFilterGen">
+                <option value="">All</option>
+              </select>
+            </label>
+            <label class="filter-field">
+              <span>Rating</span>
+              <select id="galleryFilterRating">
+                <option value="">All</option>
+                <option value="5">5</option>
+                <option value="4">4+</option>
+                <option value="3">3</option>
+                <option value="2">2−</option>
+                <option value="1">1</option>
+              </select>
+            </label>
+          </div>
         </div>
-      </div>
 
-      <details class="log-details">
-        <summary>Reflection log</summary>
-        <div class="log-feed" id="logFeed"></div>
-      </details>
+        <div class="archive-grid" id="archiveGrid"></div>
+        <p class="gallery-empty" id="galleryEmpty" hidden>No sketches match these filters.</p>
+
+        <div class="gallery-pagination" id="galleryPagination" hidden>
+          <button type="button" class="btn-page" id="galleryPrev" disabled>Previous</button>
+          <span class="page-info" id="galleryPageInfo">Page 1</span>
+          <button type="button" class="btn-page" id="galleryNext">Next</button>
+        </div>
+
+        <section class="timeline-block">
+          <div class="section-head">
+            <h2>Evolution</h2>
+            <p class="section-desc">Strategy milestones after each rated batch.</p>
+          </div>
+          <ol class="timeline-list" id="timelineList"></ol>
+        </section>
+      </div>
     </section>
-    </div>
+
+    <!-- Settings: learning state + controls -->
+    <section class="app-page page-settings" id="pageSettings" data-page="settings" hidden>
+      <div class="content-wrap settings-wrap">
+        <div class="settings-grid">
+          <section class="settings-card">
+            <h2 class="page-title">Autopilot</h2>
+            <p class="page-sub">Start, stop, or unstick the generation loop.</p>
+            <div class="settings-actions">
+              <button type="button" class="btn-settings" id="btnAutopilotStart">Start</button>
+              <button type="button" class="btn-settings" id="btnAutopilotStop">Stop</button>
+              <button type="button" class="btn-settings btn-settings--muted" id="btnAutopilotKick">Kick / retry</button>
+            </div>
+            <dl class="system-dl" id="autopilotInfo"></dl>
+          </section>
+
+          <section class="settings-card">
+            <h2 class="page-title">System</h2>
+            <p class="page-sub">Runtime and storage.</p>
+            <dl class="system-dl" id="systemInfo"></dl>
+          </section>
+        </div>
+
+        <section class="settings-card settings-card--wide">
+          <h2 class="page-title">Latest notes</h2>
+          <blockquote class="reflection-text" id="reflectionText">
+            Waiting for the first batch.
+          </blockquote>
+          <details class="strategy-details">
+            <summary>Active strategy genome</summary>
+            <pre id="strategyText"></pre>
+          </details>
+        </section>
+
+        <section class="settings-card settings-card--wide">
+          <h2 class="page-title">Learned taste</h2>
+          <p class="page-sub">Evidence-backed rules from your ratings.</p>
+          <div class="memory-columns">
+            <div>
+              <h3 class="memory-heading">Prefer</h3>
+              <ul class="memory-list" id="preferList"></ul>
+            </div>
+            <div>
+              <h3 class="memory-heading">Avoid</h3>
+              <ul class="memory-list" id="avoidList"></ul>
+            </div>
+          </div>
+        </section>
+
+        <section class="settings-card settings-card--wide">
+          <h2 class="page-title">Heuristics</h2>
+          <ul class="heuristics-list" id="heuristicsList"></ul>
+          <div class="monologue-block">
+            <button type="button" class="btn-text" id="btnMonologue">Summarize learning so far</button>
+            <div class="monologue-output" id="monologueOutput" hidden>
+              <p id="monologueText"></p>
+            </div>
+          </div>
+          <details class="log-details">
+            <summary>Reflection log</summary>
+            <div class="log-feed" id="logFeed"></div>
+          </details>
+        </section>
+      </div>
+    </section>
   </main>
 
-  <dialog class="shader-dialog" id="shaderDialog">
-    <button type="button" class="dialog-close" id="dialogClose" aria-label="Close">×</button>
-    <div class="dialog-layout">
-      <section class="dialog-preview">
-        <div class="dialog-canvas-wrap">
-          <canvas id="dialogCanvas"></canvas>
-          <p class="dialog-hint" id="dialogHint">move pointer to interact</p>
-          <p class="dialog-loading" id="dialogLoading">compiling shader…</p>
+  <dialog class="shader-dialog" id="shaderDialog" aria-labelledby="dialogTitle" tabindex="-1">
+    <div class="dialog-shell">
+      <header class="dialog-header">
+        <div class="dialog-header-text">
+          <p class="dialog-eyebrow" id="dialogEyebrow"></p>
+          <h2 id="dialogTitle">Shader</h2>
         </div>
-        <p class="dialog-compile-error" id="dialogError" hidden></p>
-      </section>
-      <section class="dialog-meta">
-        <p class="dialog-eyebrow" id="dialogEyebrow"></p>
-        <h3 id="dialogTitle"></h3>
-        <p class="dialog-hypothesis" id="dialogHypothesis"></p>
-        <p class="dialog-statement" id="dialogStatement" hidden></p>
-        <div class="dialog-tags" id="dialogTags"></div>
-        <details class="dialog-source-details">
-          <summary>GLSL source</summary>
-          <pre class="dialog-code"><code id="dialogCode"></code></pre>
-        </details>
-      </section>
+        <div class="dialog-header-actions">
+          <span class="dialog-rating" id="dialogRating" hidden></span>
+          <button type="button" class="dialog-close" id="dialogClose" aria-label="Close">Close</button>
+        </div>
+      </header>
+      <div class="dialog-body">
+        <section class="dialog-preview">
+          <div class="dialog-canvas-wrap">
+            <canvas id="dialogCanvas"></canvas>
+            <p class="dialog-hint" id="dialogHint">move pointer to interact</p>
+            <p class="dialog-loading" id="dialogLoading">compiling shader…</p>
+          </div>
+          <p class="dialog-compile-error" id="dialogError" hidden></p>
+        </section>
+        <aside class="dialog-meta">
+          <p class="dialog-hypothesis" id="dialogHypothesis"></p>
+          <p class="dialog-statement" id="dialogStatement" hidden></p>
+          <div class="dialog-tags" id="dialogTags"></div>
+          <details class="dialog-source-details" open>
+            <summary>GLSL source</summary>
+            <pre class="dialog-code"><code id="dialogCode"></code></pre>
+          </details>
+        </aside>
+      </div>
     </div>
   </dialog>
 
-  <script type="module" src="app.js?v=14"></script>
+  <script type="module" src="app.js?v=20"></script>
 </body>
 </html>

@@ -1,5 +1,6 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=11";
-import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=6";
+import { ShaderRenderer } from "./shader-renderer.js?v=12";
+import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=7";
+import { VoiceCurator } from "./voice-curator.js?v=1";
 
 const THUMB_SIZE = 96;
 const THUMB_TIME = 1.25;
@@ -15,14 +16,14 @@ const PHASE_LABELS = {
   error: "error · retrying"
 };
 
+const PAGES = ["studio", "gallery", "settings"];
+
 class ShaderMindUI {
   constructor() {
     this.renderers = new Map();
     this.timelineRenderers = [];
     this.dialogRenderer = null;
-    this.dialogReparent = null;
     this.dialogOwnedRenderer = false;
-    this.suspendedGridIds = [];
     this.displayedGeneration = null;
     this.displayedBatchKey = null;
     this.lastGen = -1;
@@ -36,8 +37,27 @@ class ShaderMindUI {
     this.timelineKey = null;
     this.pollTimer = null;
     this.pollIntervalMs = 3000;
+    this.currentPage = "studio";
+    this.galleryPage = 1;
+    this.galleryLimit = 20;
+    this.galleryPages = 1;
+    this.galleryItems = [];
+    this.galleryKey = null;
+    this.lastState = null;
+    this.lastAutopilot = null;
+    this.sharedGridSuspended = false;
+    this.dialogSketchId = null;
+    this.bodyScrollLocked = false;
+    this.savedScrollY = 0;
+    this.voiceCurator = new VoiceCurator(this);
 
     this.els = {
+      navTabs: [...document.querySelectorAll(".nav-tab")],
+      pages: {
+        studio: document.getElementById("pageStudio"),
+        gallery: document.getElementById("pageGallery"),
+        settings: document.getElementById("pageSettings")
+      },
       statGen: document.getElementById("statGen"),
       statSketches: document.getElementById("statSketches"),
       statFavor: document.getElementById("statFavor"),
@@ -46,6 +66,9 @@ class ShaderMindUI {
       studioStatus: document.getElementById("studioStatus"),
       statusMessage: document.getElementById("statusMessage"),
       batchLabel: document.getElementById("batchLabel"),
+      voicePanel: document.getElementById("voicePanel"),
+      btnVoiceConnect: document.getElementById("btnVoiceConnect"),
+      voiceStatus: document.getElementById("voiceStatus"),
       btnGenerateNext: document.getElementById("btnGenerateNext"),
       btnRegenerateBatch: document.getElementById("btnRegenerateBatch"),
       shaderGrid: document.getElementById("shaderGrid"),
@@ -54,10 +77,25 @@ class ShaderMindUI {
       userOpinion: document.getElementById("userOpinion"),
       btnSubmitFeedback: document.getElementById("btnSubmitFeedback"),
       curationHint: document.getElementById("curationHint"),
+      archiveGrid: document.getElementById("archiveGrid"),
+      galleryEmpty: document.getElementById("galleryEmpty"),
+      galleryPagination: document.getElementById("galleryPagination"),
+      galleryPrev: document.getElementById("galleryPrev"),
+      galleryNext: document.getElementById("galleryNext"),
+      galleryPageInfo: document.getElementById("galleryPageInfo"),
+      galleryFilterGen: document.getElementById("galleryFilterGen"),
+      galleryFilterRating: document.getElementById("galleryFilterRating"),
       reflectionText: document.getElementById("reflectionText"),
       strategyText: document.getElementById("strategyText"),
       timelineList: document.getElementById("timelineList"),
       heuristicsList: document.getElementById("heuristicsList"),
+      preferList: document.getElementById("preferList"),
+      avoidList: document.getElementById("avoidList"),
+      systemInfo: document.getElementById("systemInfo"),
+      autopilotInfo: document.getElementById("autopilotInfo"),
+      btnAutopilotStart: document.getElementById("btnAutopilotStart"),
+      btnAutopilotStop: document.getElementById("btnAutopilotStop"),
+      btnAutopilotKick: document.getElementById("btnAutopilotKick"),
       btnMonologue: document.getElementById("btnMonologue"),
       monologueOutput: document.getElementById("monologueOutput"),
       monologueText: document.getElementById("monologueText"),
@@ -70,6 +108,7 @@ class ShaderMindUI {
       dialogHint: document.getElementById("dialogHint"),
       dialogEyebrow: document.getElementById("dialogEyebrow"),
       dialogTitle: document.getElementById("dialogTitle"),
+      dialogRating: document.getElementById("dialogRating"),
       dialogHypothesis: document.getElementById("dialogHypothesis"),
       dialogStatement: document.getElementById("dialogStatement"),
       dialogTags: document.getElementById("dialogTags"),
@@ -80,13 +119,212 @@ class ShaderMindUI {
     this.els.shaderDialog.addEventListener("click", (e) => {
       if (e.target === this.els.shaderDialog) this.closeDialog();
     });
+    this.els.shaderDialog.addEventListener("close", () => this.onDialogClosed());
     this.els.btnMonologue.addEventListener("click", () => this.fetchMonologue());
     this.els.btnSubmitFeedback.addEventListener("click", () => this.submitFeedback());
     this.els.btnGenerateNext.addEventListener("click", () => this.generateNextBatch());
     this.els.btnRegenerateBatch?.addEventListener("click", () => this.regenerateBatch());
+    this.els.navTabs.forEach(tab => {
+      tab.addEventListener("click", () => this.setPage(tab.dataset.page));
+    });
+    this.els.galleryPrev.addEventListener("click", () => this.changeGalleryPage(-1));
+    this.els.galleryNext.addEventListener("click", () => this.changeGalleryPage(1));
+    this.els.galleryFilterGen.addEventListener("change", () => {
+      this.galleryPage = 1;
+      this.galleryKey = null;
+      this.loadGalleryPage();
+    });
+    this.els.galleryFilterRating.addEventListener("change", () => {
+      this.galleryPage = 1;
+      this.galleryKey = null;
+      this.loadGalleryPage();
+    });
+    this.els.btnAutopilotStart.addEventListener("click", () => this.autopilotAction("start"));
+    this.els.btnAutopilotStop.addEventListener("click", () => this.autopilotAction("stop"));
+    this.els.btnAutopilotKick.addEventListener("click", () => this.autopilotAction("kick"));
+    this.els.btnVoiceConnect?.addEventListener("click", () => this.toggleVoice());
+
+    this.voiceCurator.onStatusChange = (status) => this.updateVoiceStatus(status);
+    this.initVoicePanel();
+
+    window.addEventListener("hashchange", () => this.syncPageFromHash());
+    this.syncPageFromHash(true);
 
     this.poll();
     this.schedulePoll();
+  }
+
+  pageFromHash() {
+    const hash = (location.hash || "").replace(/^#/, "").toLowerCase();
+    return PAGES.includes(hash) ? hash : "studio";
+  }
+
+  syncPageFromHash(initial = false) {
+    const page = this.pageFromHash();
+    if (initial && page === "studio" && !location.hash) return;
+    this.setPage(page, false);
+  }
+
+  setPage(page, updateHash = true) {
+    if (!PAGES.includes(page)) page = "studio";
+    if (this.currentPage === page) return;
+
+    const leavingStudio = this.currentPage === "studio" && page !== "studio";
+    this.currentPage = page;
+
+    this.els.navTabs.forEach(tab => {
+      tab.classList.toggle("is-active", tab.dataset.page === page);
+    });
+    for (const [name, el] of Object.entries(this.els.pages)) {
+      if (!el) continue;
+      const active = name === page;
+      el.hidden = !active;
+      el.classList.toggle("is-active", active);
+    }
+
+    if (updateHash && location.hash.replace("#", "") !== page) {
+      history.replaceState(null, "", `#${page}`);
+    }
+
+    if (leavingStudio) {
+      getSharedGridRenderer().clearByPrefix("");
+      if (this.voiceCurator.connected) {
+        this.voiceCurator.disconnect().catch(() => {});
+      }
+    }
+
+    if (page === "studio" && this.lastAutopilot) {
+      this.displayedBatchKey = null;
+      this.updateStudio(this.lastAutopilot, this.lastState || {});
+    }
+
+    if (page === "gallery") {
+      this.loadGalleryPage();
+      if (this.lastState) this.updateTimeline(this.lastState);
+    }
+  }
+
+  galleryQueryParams() {
+    const gen = this.els.galleryFilterGen.value;
+    const rating = this.els.galleryFilterRating.value;
+    const params = new URLSearchParams({
+      page: String(this.galleryPage),
+      limit: String(this.galleryLimit)
+    });
+    if (gen) params.set("generation", gen);
+    if (rating) params.set("rating", rating);
+    return params;
+  }
+
+  async loadGalleryPage() {
+    try {
+      const res = await fetch(`/api/sketches?${this.galleryQueryParams()}`);
+      if (!res.ok) throw new Error("Failed to load gallery");
+      const data = await res.json();
+      this.galleryItems = data.items || data;
+      this.galleryPages = data.pages || 1;
+      this.galleryPage = data.page || this.galleryPage;
+      this.renderGalleryGrid();
+    } catch (err) {
+      console.error(err);
+      this.els.galleryEmpty.hidden = false;
+      this.els.galleryEmpty.textContent = "Could not load gallery.";
+    }
+  }
+
+  changeGalleryPage(delta) {
+    const next = this.galleryPage + delta;
+    if (next < 1 || next > this.galleryPages) return;
+    this.galleryPage = next;
+    this.galleryKey = null;
+    this.loadGalleryPage();
+  }
+
+  renderGalleryGrid() {
+    const items = this.galleryItems || [];
+    const key = `${this.galleryPage}:${items.map(s => s.id).join(",")}`;
+    if (key === this.galleryKey) return;
+    this.galleryKey = key;
+
+    this.els.archiveGrid.innerHTML = "";
+    this.els.galleryEmpty.hidden = items.length > 0;
+    this.els.galleryPagination.hidden = this.galleryPages <= 1;
+
+    if (!items.length) return;
+
+    items.forEach(sketch => {
+      const cell = document.createElement("article");
+      cell.className = "archive-cell";
+      cell.dataset.id = sketch.id;
+
+      const thumb = document.createElement("div");
+      thumb.className = "archive-thumb";
+      if (sketch.thumbnail) {
+        const img = document.createElement("img");
+        img.src = sketch.thumbnail;
+        img.alt = sketch.title || "";
+        img.loading = "lazy";
+        thumb.appendChild(img);
+      } else {
+        thumb.classList.add("archive-thumb-pending");
+        this.queueThumbnailBackfill(sketch);
+      }
+
+      const score = this.ratingValue(sketch.rating);
+      const caption = document.createElement("div");
+      caption.className = "archive-caption";
+      caption.innerHTML = `
+        <h4>${this.esc(sketch.title || "Untitled")}</h4>
+        <div class="archive-meta">
+          <span>Gen ${sketch.generation}</span>
+          <span>${score ? `${score}/5` : "—"}</span>
+        </div>
+      `;
+
+      cell.appendChild(thumb);
+      cell.appendChild(caption);
+      cell.addEventListener("click", (e) => {
+        if (e.target.closest(".btn-rate")) return;
+        this.openDialog(sketch, window.scrollY);
+      });
+      this.els.archiveGrid.appendChild(cell);
+    });
+
+    this.els.galleryPageInfo.textContent = `Page ${this.galleryPage} of ${this.galleryPages}`;
+    this.els.galleryPrev.disabled = this.galleryPage <= 1;
+    this.els.galleryNext.disabled = this.galleryPage >= this.galleryPages;
+  }
+
+  updateGalleryFilters(state) {
+    const gen = state.generationCount || 0;
+    const select = this.els.galleryFilterGen;
+    const current = select.value;
+    const options = ['<option value="">All</option>'];
+    for (let g = gen; g >= 1; g--) {
+      options.push(`<option value="${g}">Gen ${g}</option>`);
+    }
+    select.innerHTML = options.join("");
+    if (current && Number(current) <= gen) select.value = current;
+  }
+
+  async autopilotAction(action) {
+    const paths = {
+      start: "/api/autopilot/start",
+      stop: "/api/autopilot/stop",
+      kick: "/api/autopilot/kick"
+    };
+    const btn = { start: this.els.btnAutopilotStart, stop: this.els.btnAutopilotStop, kick: this.els.btnAutopilotKick }[action];
+    if (btn) btn.disabled = true;
+    try {
+      const res = await fetch(paths[action], { method: "POST" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `${action} failed`);
+      await this.poll();
+    } catch (err) {
+      alert(err.message);
+    } finally {
+      if (btn) btn.disabled = false;
+    }
   }
 
   schedulePoll() {
@@ -130,20 +368,24 @@ class ShaderMindUI {
         sketchData = await sketchesRes.json();
       }
       this.sketches = Array.isArray(sketchData) ? sketchData : (sketchData.items || []);
+      this.lastState = state;
+      this.lastAutopilot = autopilot;
 
       this.els.autopilotPill.classList.remove("is-error");
       this.updateHeader(state, autopilot);
-      this.updateStudio(autopilot, state);
+      if (this.currentPage === "studio") {
+        this.updateStudio(autopilot, state);
+      }
       if (stateRes.ok) {
-        this.updateReflection(state);
-        this.updateMind(state);
+        this.updateSettings(state, autopilot);
+        this.updateGalleryFilters(state);
       }
 
       if (stateRes.ok) {
         const fp = this.timelineFingerprint(state);
         if (fp !== this.timelineKey) {
           this.timelineKey = fp;
-          this.updateTimeline(state);
+          if (this.currentPage === "gallery") this.updateTimeline(state);
         }
         if (state.generationCount !== this.lastGen) {
           this.lastGen = state.generationCount;
@@ -324,7 +566,10 @@ class ShaderMindUI {
       cell.appendChild(caption);
       this.els.shaderGrid.appendChild(cell);
 
-      wrap.addEventListener("click", () => this.openDialog(sketch));
+      cell.addEventListener("click", (e) => {
+        if (e.target.closest(".btn-rate")) return;
+        this.openDialog(sketch, window.scrollY);
+      });
       wrap.addEventListener("mousemove", (e) => {
         const rect = wrap.getBoundingClientRect();
         getSharedGridRenderer().setMouse(
@@ -364,6 +609,116 @@ class ShaderMindUI {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(result)
     }).catch(err => console.warn("Compile result was not reported:", err.message));
+  }
+
+  async initVoicePanel() {
+    const cfg = await this.voiceCurator.loadConfig();
+    if (!cfg.enabled || !this.els.voicePanel) return;
+    this.els.voicePanel.hidden = false;
+  }
+
+  updateVoiceStatus(status) {
+    if (!this.els.btnVoiceConnect) return;
+    const live = status === "live";
+    const connecting = status === "connecting";
+    this.els.btnVoiceConnect.classList.toggle("is-live", live);
+    this.els.btnVoiceConnect.setAttribute("aria-pressed", live ? "true" : "false");
+    this.els.btnVoiceConnect.textContent = live
+      ? "End voice session"
+      : connecting
+        ? "Connecting…"
+        : "Talk to ShaderMind";
+    this.els.btnVoiceConnect.disabled = connecting;
+
+    if (this.els.voiceStatus) {
+      const show = live || connecting;
+      this.els.voiceStatus.hidden = !show;
+      this.els.voiceStatus.textContent = live
+        ? "voice curator live"
+        : connecting
+          ? "joining room…"
+          : "";
+    }
+  }
+
+  async toggleVoice() {
+    if (!this.els.btnVoiceConnect) return;
+    try {
+      if (this.voiceCurator.connected) {
+        await this.voiceCurator.disconnect();
+      } else {
+        await this.voiceCurator.connect();
+      }
+    } catch (err) {
+      alert(`Voice error: ${err.message}`);
+      this.updateVoiceStatus("idle");
+    }
+  }
+
+  resolveSketchRef({ index, sketchId }) {
+    const batch = this.activeBatch || [];
+    if (sketchId) {
+      const byId = batch.find(s => s.id === sketchId);
+      if (!byId) throw new Error(`Shader ${sketchId} is not in the current batch.`);
+      return byId;
+    }
+    if (!index || index < 1 || index > batch.length) {
+      throw new Error(`Shader index must be between 1 and ${batch.length || 0}.`);
+    }
+    return batch[index - 1];
+  }
+
+  applyVoiceRating({ index, sketchId, rating }) {
+    const sketch = this.resolveSketchRef({ index, sketchId });
+    const score = Number(rating);
+    if (!Number.isInteger(score) || score < 1 || score > 5) {
+      throw new Error("Rating must be an integer from 1 to 5.");
+    }
+    this.rateSketch(sketch.id, score);
+    return {
+      ok: true,
+      sketchId: sketch.id,
+      title: sketch.title,
+      rating: score,
+      progress: this.getVoiceCurationProgress()
+    };
+  }
+
+  applyVoiceOpinion(notes) {
+    const text = String(notes || "").trim();
+    if (!text) throw new Error("Notes cannot be empty.");
+    this.els.userOpinion.value = text;
+    return { ok: true, notes: text };
+  }
+
+  getVoiceCurationProgress() {
+    const total = this.activeBatch?.length || 0;
+    const rated = Object.keys(this.userRatings).length;
+    const sketches = (this.activeBatch || []).map((sketch, i) => ({
+      index: i + 1,
+      id: sketch.id,
+      title: sketch.title,
+      rating: this.userRatings[sketch.id] ?? null
+    }));
+    return {
+      total,
+      rated,
+      readyToSubmit: total > 0 && rated === total,
+      sketches
+    };
+  }
+
+  async submitVoiceCuration() {
+    const progress = this.getVoiceCurationProgress();
+    if (!progress.readyToSubmit) {
+      throw new Error(`Only ${progress.rated} of ${progress.total} shaders are rated.`);
+    }
+    await this.submitFeedback();
+    return {
+      ok: true,
+      submitted: true,
+      generation: this.activeBatch?.[0]?.generation ?? null
+    };
   }
 
   rateSketch(sketchId, rating) {
@@ -434,9 +789,12 @@ class ShaderMindUI {
 
   async drainThumbnailBackfill() {
     if (this.thumbBackfillBusy || !this.thumbBackfillQueue.length) return;
+    if (this.els.shaderDialog?.open) return;
     this.thumbBackfillBusy = true;
 
     while (this.thumbBackfillQueue.length) {
+      if (this.els.shaderDialog?.open) break;
+
       const sketch = this.thumbBackfillQueue.shift();
       if (!sketch || sketch.thumbnail || this.thumbBackfillSeen.has(sketch.id)) continue;
 
@@ -485,22 +843,33 @@ class ShaderMindUI {
 
   refreshTimelineThumb(sketchId, thumbnail) {
     const btn = this.els.timelineList.querySelector(`[data-sketch-id="${sketchId}"]`);
-    if (!btn) return;
-
-    const existing = btn.querySelector("img");
-    if (existing) {
-      existing.src = thumbnail;
-      return;
+    if (btn) {
+      const existing = btn.querySelector("img");
+      if (existing) {
+        existing.src = thumbnail;
+      } else {
+        btn.classList.remove("timeline-thumb-pending");
+        btn.style.background = "";
+        delete btn.dataset.pending;
+        const img = document.createElement("img");
+        img.src = thumbnail;
+        img.alt = "";
+        img.loading = "lazy";
+        btn.appendChild(img);
+      }
     }
 
-    btn.classList.remove("timeline-thumb-pending");
-    btn.style.background = "";
-    delete btn.dataset.pending;
-    const img = document.createElement("img");
-    img.src = thumbnail;
-    img.alt = "";
-    img.loading = "lazy";
-    btn.appendChild(img);
+    const archiveCell = this.els.archiveGrid?.querySelector(`[data-id="${sketchId}"] .archive-thumb`);
+    if (archiveCell) {
+      archiveCell.classList.remove("archive-thumb-pending");
+      if (!archiveCell.querySelector("img")) {
+        const img = document.createElement("img");
+        img.src = thumbnail;
+        img.alt = "";
+        img.loading = "lazy";
+        archiveCell.appendChild(img);
+      }
+    }
   }
 
   mountTimelineThumb(container, sketch) {
@@ -522,7 +891,7 @@ class ShaderMindUI {
       this.queueThumbnailBackfill(sketch);
     }
 
-    thumb.addEventListener("click", () => this.openDialog(sketch));
+    thumb.addEventListener("click", () => this.openDialog(sketch, window.scrollY));
     container.appendChild(thumb);
   }
 
@@ -624,29 +993,60 @@ class ShaderMindUI {
     }
   }
 
-  updateReflection(state) {
+  updateSettings(state, autopilot = {}) {
     const timeline = state.strategyTimeline || [];
     const latest = timeline[timeline.length - 1];
-    if (latest?.notes && !this.els.btnSubmitFeedback.disabled) {
+    if (latest?.notes && this.els.btnSubmitFeedback.disabled) {
       this.els.reflectionText.textContent = latest.notes;
+    } else if (!latest?.notes) {
+      this.els.reflectionText.textContent = "Waiting for the first batch.";
     }
     this.els.strategyText.textContent = state.currentStrategy || "";
-  }
 
-  updateMind(state) {
     const heuristics = state.heuristics || [];
     this.els.heuristicsList.innerHTML = heuristics.length
       ? heuristics.map(h => `<li>${this.esc(h)}</li>`).join("")
       : "<li>Awaiting your first curation.</li>";
 
-    const timeline = state.strategyTimeline || [];
-    this.els.logFeed.innerHTML = timeline.map(t => `
+    this.els.logFeed.innerHTML = [...timeline].reverse().map(t => `
       <div class="log-entry">
         <strong>Gen ${t.generation}</strong>
         <span> · ${new Date(t.timestamp).toLocaleString()}</span>
         <p>${this.esc(t.notes || "")}</p>
       </div>
     `).join("");
+
+    const memory = state.preferenceMemory || { prefer: [], avoid: [] };
+    this.els.preferList.innerHTML = (memory.prefer || []).length
+      ? memory.prefer.map(item => `
+          <li>${this.esc(item.rule)}
+            <span class="memory-meta">avg ${item.averageRating} · support ${item.support}</span>
+          </li>`).join("")
+      : "<li>No prefer rules yet.</li>";
+    this.els.avoidList.innerHTML = (memory.avoid || []).length
+      ? memory.avoid.map(item => `
+          <li>${this.esc(item.rule)}
+            <span class="memory-meta">avg ${item.averageRating} · support ${item.support}</span>
+          </li>`).join("")
+      : "<li>No avoid rules yet.</li>";
+
+    const phase = autopilot.phase || "idle";
+    this.els.autopilotInfo.innerHTML = `
+      <dt>Phase</dt><dd>${this.esc(phase)}</dd>
+      <dt>Running</dt><dd>${autopilot.running ? "yes" : "no"}</dd>
+      <dt>Cycles</dt><dd>${autopilot.cyclesCompleted ?? 0}</dd>
+      ${autopilot.lastError ? `<dt>Last error</dt><dd>${this.esc(autopilot.lastError)}</dd>` : ""}
+    `;
+    this.els.btnAutopilotStart.disabled = autopilot.running;
+    this.els.btnAutopilotStop.disabled = !autopilot.running;
+
+    this.els.systemInfo.innerHTML = `
+      <dt>Storage</dt><dd>${this.esc(state.storage || "—")}</dd>
+      <dt>Rating scale</dt><dd>${this.esc(state.ratingScale || "1-5")}</dd>
+      <dt>Learning mode</dt><dd>${this.esc(state.learningMode || "—")}</dd>
+      <dt>Code-aware</dt><dd>${state.codeAwareLearning ? "on" : "off"}</dd>
+      <dt>Model</dt><dd>${this.esc(state.aiProvider?.model || "—")}</dd>
+    `;
   }
 
   updateTimeline(state) {
@@ -701,80 +1101,143 @@ class ShaderMindUI {
     }
   }
 
-  restoreDialogCanvas() {
-    if (!this.dialogReparent) return;
-
-    const { gridWrap, gridCanvas, placeholder, anchor, renderer } = this.dialogReparent;
-    const dialogWrap = placeholder.parentElement;
-    if (gridCanvas.parentElement === dialogWrap) {
-      gridWrap.insertBefore(gridCanvas, anchor);
-    }
-    placeholder.hidden = false;
-    renderer?.bindUi({ errorEl: null, loadingEl: null, hintEl: null });
-    renderer?.relayout();
-    this.dialogReparent = null;
+  resolveSketch(sketch) {
+    if (!sketch?.id) return sketch;
+    const cached = this.sketches.find(s => s.id === sketch.id)
+      || this.activeBatch?.find(s => s.id === sketch.id)
+      || this.galleryItems?.find(s => s.id === sketch.id);
+    if (!cached) return sketch;
+    return { ...cached, ...sketch, glsl: sketch.glsl || cached.glsl };
   }
 
-  suspendGridRenderers() {
-    this.suspendedGridIds = [];
-    for (const [id, renderer] of this.renderers) {
-      if (!renderer.isRunning() && !renderer.gl) continue;
-      renderer.destroy();
-      this.suspendedGridIds.push(id);
-    }
+  suspendSharedGrid() {
+    if (this.sharedGridSuspended) return;
+    getSharedGridRenderer().suspend();
+    this.sharedGridSuspended = true;
   }
 
-  resumeGridRenderers() {
-    if (!this.suspendedGridIds.length || !this.activeBatch?.length) {
-      this.suspendedGridIds = [];
-      return;
-    }
-    for (const id of this.suspendedGridIds) {
-      const renderer = this.renderers.get(id);
-      const sketch = this.activeBatch.find(s => s.id === id);
-      if (renderer && sketch?.glsl) {
-        renderer.compileWhenReady(sketch.glsl);
-      }
-    }
-    this.suspendedGridIds = [];
+  resumeSharedGrid() {
+    if (!this.sharedGridSuspended) return;
+    getSharedGridRenderer().resume();
+    this.sharedGridSuspended = false;
   }
 
   disposeDialogRenderer() {
-    this.restoreDialogCanvas();
     if (this.dialogOwnedRenderer && this.dialogRenderer) {
       this.dialogRenderer.destroy();
     }
     this.dialogRenderer = null;
     this.dialogOwnedRenderer = false;
-    this.resumeGridRenderers();
+    this.dialogSketchId = null;
+    this.resumeSharedGrid();
+    this.drainThumbnailBackfill();
   }
 
-  waitForDialogOpen() {
+  lockBodyScroll(scrollY = null) {
+    if (this.bodyScrollLocked) return;
+    this.savedScrollY = scrollY ?? window.scrollY ?? document.documentElement.scrollTop ?? 0;
+    // Set top BEFORE position:fixed — otherwise one frame shows the page top.
+    document.body.style.top = `-${this.savedScrollY}px`;
+    document.documentElement.classList.add("dialog-open");
+    document.body.classList.add("dialog-open");
+    this.bodyScrollLocked = true;
+  }
+
+  unlockBodyScroll() {
+    if (!this.bodyScrollLocked) return;
+    const y = this.savedScrollY;
+    document.documentElement.classList.remove("dialog-open");
+    document.body.classList.remove("dialog-open");
+    document.body.style.top = "";
+    this.bodyScrollLocked = false;
+    this.savedScrollY = 0;
+    window.scrollTo(0, y);
+  }
+
+  onDialogClosed() {
+    this.disposeDialogRenderer();
+    this.unlockBodyScroll();
+  }
+
+  waitForDialogLayout() {
     return new Promise((resolve) => {
-      if (this.els.shaderDialog.open) {
+      const wrap = this.els.dialogCanvas.parentElement;
+      let attempts = 0;
+
+      const ready = () => {
+        const rect = wrap?.getBoundingClientRect();
+        return rect && rect.width >= 32 && rect.height >= 32;
+      };
+
+      const finish = () => {
         requestAnimationFrame(() => requestAnimationFrame(resolve));
+      };
+
+      if (ready()) {
+        finish();
         return;
       }
-      this.els.shaderDialog.addEventListener("open", () => {
-        requestAnimationFrame(() => requestAnimationFrame(resolve));
-      }, { once: true });
+
+      const poll = () => {
+        attempts += 1;
+        if (ready() || attempts >= 40) {
+          finish();
+          return;
+        }
+        requestAnimationFrame(poll);
+      };
+
+      if (wrap && typeof ResizeObserver !== "undefined") {
+        const observer = new ResizeObserver(() => {
+          if (!ready()) return;
+          observer.disconnect();
+          finish();
+        });
+        observer.observe(wrap);
+        requestAnimationFrame(poll);
+        return;
+      }
+
+      requestAnimationFrame(poll);
     });
   }
 
-  openDialog(sketch) {
-    this.disposeDialogRenderer();
+  async openDialog(sketch, scrollY = null) {
+    const openScrollY = scrollY ?? window.scrollY ?? document.documentElement.scrollTop ?? 0;
 
-    const dna = Array.isArray(sketch.dna) ? sketch.dna : [];
-    this.els.dialogEyebrow.textContent = `Gen ${sketch.generation} · ${sketch.type || "sketch"}`;
-    this.els.dialogTitle.textContent = sketch.title || "Untitled";
-    this.els.dialogHypothesis.textContent = sketch.hypothesis || "";
-    this.els.dialogHypothesis.hidden = !sketch.hypothesis;
+    const resolved = this.resolveSketch(sketch);
+    if (!resolved?.glsl) {
+      alert("Shader source unavailable for this sketch.");
+      return;
+    }
+
+    if (this.els.shaderDialog.open) {
+      this.closeDialog();
+    }
+
+    this.dialogSketchId = resolved.id;
+    const dna = Array.isArray(resolved.dna) ? resolved.dna : [];
+    const score = this.ratingValue(resolved.rating);
+
+    this.els.dialogEyebrow.textContent = `Gen ${resolved.generation} · ${resolved.type || "sketch"}`;
+    this.els.dialogTitle.textContent = resolved.title || "Untitled";
+    this.els.dialogHypothesis.textContent = resolved.hypothesis || "";
+    this.els.dialogHypothesis.hidden = !resolved.hypothesis;
+
+    if (score) {
+      this.els.dialogRating.hidden = false;
+      this.els.dialogRating.textContent = `${score} / 5`;
+    } else {
+      this.els.dialogRating.hidden = true;
+      this.els.dialogRating.textContent = "";
+    }
+
     if (this.els.dialogStatement) {
       this.els.dialogStatement.textContent = "";
       this.els.dialogStatement.hidden = true;
     }
     this.els.dialogTags.innerHTML = dna.map(t => `<span>#${this.esc(t)}</span>`).join("");
-    this.els.dialogCode.textContent = sketch.glsl || "";
+    this.els.dialogCode.textContent = resolved.glsl || "";
 
     this.els.dialogError.hidden = true;
     this.els.dialogError.textContent = "";
@@ -782,24 +1245,33 @@ class ShaderMindUI {
     this.els.dialogHint.hidden = true;
     this.els.dialogCanvas.hidden = false;
 
+    this.suspendSharedGrid();
+    this.lockBodyScroll(openScrollY);
     this.els.shaderDialog.showModal();
+    if (typeof this.els.shaderDialog.focus === "function") {
+      this.els.shaderDialog.focus({ preventScroll: true });
+    }
 
-    const dialogWrap = this.els.dialogCanvas.parentElement;
-    const glsl = sketch.glsl || "";
-    this.suspendGridRenderers();
-    this.waitForDialogOpen().then(() => {
-      this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
-        errorEl: this.els.dialogError,
-        loadingEl: this.els.dialogLoading,
-        hintEl: this.els.dialogHint
-      });
-      this.dialogOwnedRenderer = true;
-      this.dialogRenderer.compileWhenReady(glsl);
+    await this.waitForDialogLayout();
+    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+    if (this.dialogSketchId !== resolved.id || !this.els.shaderDialog.open) return;
+
+    this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
+      errorEl: this.els.dialogError,
+      loadingEl: this.els.dialogLoading,
+      hintEl: this.els.dialogHint
     });
+    this.dialogOwnedRenderer = true;
+    this.dialogRenderer.compileWhenReady(resolved.glsl);
   }
 
   closeDialog() {
-    this.disposeDialogRenderer();
+    if (!this.els.shaderDialog.open) {
+      this.disposeDialogRenderer();
+      this.unlockBodyScroll();
+      return;
+    }
     this.els.shaderDialog.close();
   }
 

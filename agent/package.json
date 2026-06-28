@@ -1,0 +1,21 @@
+{
+  "name": "shadermind-curator-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node src/main.js dev",
+    "start": "node src/main.js start",
+    "download-files": "npx livekit-agents download-files"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "dependencies": {
+    "@livekit/agents": "^1.4.7",
+    "@livekit/agents-plugin-google": "^1.0.7",
+    "@livekit/agents-plugin-minimax": "^1.0.2",
+    "dotenv": "^17.4.1",
+    "zod": "^3.25.76"
+  }
+}

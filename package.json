@@ -9,11 +9,16 @@
     "dev": "node server.js",
     "test": "node --test",
     "migrate:mongo": "node scripts/migrate-json-to-mongo.js",
-    "repair:glsl": "node scripts/repair-glsl.js"
+    "repair:glsl": "node scripts/repair-glsl.js",
+    "agent:install": "npm install --prefix agent",
+    "agent:dev": "npm run dev --prefix agent",
+    "agent:start": "npm run start --prefix agent"
   },
   "dependencies": {
+    "@livekit/protocol": "^1.40.0",
     "dotenv": "^16.4.5",
     "express": "^4.19.2",
+    "livekit-server-sdk": "^2.14.0",
     "mongodb": "^6.21.0",
     "openai": "^4.52.0"
   }

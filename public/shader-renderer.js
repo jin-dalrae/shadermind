@@ -26,6 +26,8 @@ export class ShaderRenderer {
     this.error = null;
     this.resizeObserver = null;
     this.compileGeneration = 0;
+    this.releasingContext = false;
+    this.onContextLost = null;
     this.setupMouseListeners();
   }
 
@@ -116,12 +118,14 @@ export class ShaderRenderer {
     }
 
     this.gl = gl;
-    this.canvas.addEventListener("webglcontextlost", (e) => {
+    this.onContextLost = (e) => {
       e.preventDefault();
       this.stop();
+      if (this.releasingContext) return;
       this.error = "WebGL context lost.";
       this.showError(this.error);
-    });
+    };
+    this.canvas.addEventListener("webglcontextlost", this.onContextLost);
 
     const vertices = new Float32Array([
       -1, -1, 1, -1, -1, 1,
@@ -310,6 +314,8 @@ export class ShaderRenderer {
     this.stop();
     this.disconnectResizeObserver();
     this.compileGeneration += 1;
+    this.releasingContext = true;
+
     if (this.gl) {
       if (this.program) this.gl.deleteProgram(this.program);
       if (this.buffer) this.gl.deleteBuffer(this.buffer);
@@ -319,6 +325,12 @@ export class ShaderRenderer {
       this.program = null;
       this.buffer = null;
     }
+
+    if (this.onContextLost) {
+      this.canvas.removeEventListener("webglcontextlost", this.onContextLost);
+      this.onContextLost = null;
+    }
+
     if (this.releaseSlot) {
       this.releaseSlot();
       this.releaseSlot = null;
@@ -367,7 +379,8 @@ export class ShaderRenderer {
   }
 
   showError(message) {
-    console.error("ShaderRenderer:", message);
+    if (this.releasingContext) return;
+    console.warn("ShaderRenderer:", message);
     this.setUiState("error");
     const short = message.length > 400 ? `${message.slice(0, 400)}…` : message;
     const text = short.replace(/\n/g, " ");

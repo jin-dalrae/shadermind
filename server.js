@@ -29,6 +29,11 @@ import {
   ratingValue,
   selectLearningExamples
 } from "./lib/learning.js";
+import {
+  createParticipantToken,
+  getLiveKitConfig,
+  studioRoomName
+} from "./lib/livekit.js";
 
 dotenv.config();
 
@@ -1370,6 +1375,44 @@ app.get("/api/autopilot/status", (req, res) => {
     generationMode: GENERATION_MODE,
     intervalMs: AUTOPILOT_INTERVAL_MS
   });
+});
+
+app.get("/api/livekit/config", (req, res) => {
+  res.json(getLiveKitConfig());
+});
+
+app.post("/api/livekit/token", async (req, res) => {
+  const cfg = getLiveKitConfig();
+  if (!cfg.enabled) {
+    return res.status(503).json({ error: "LiveKit is not configured." });
+  }
+
+  try {
+    const db = await loadDB();
+    const generation = autopilot.currentGeneration || db.generationCount || "live";
+    const room = studioRoomName(generation);
+    const { identity, name } = req.body || {};
+    const apiBase = process.env.SHADERMIND_PUBLIC_URL
+      || `${req.protocol}://${req.get("host")}`;
+
+    const token = await createParticipantToken({
+      room,
+      identity: identity || `artist-${Date.now()}`,
+      name: name || "Artist",
+      generation,
+      apiBase
+    });
+
+    res.json({
+      token,
+      url: cfg.url,
+      room,
+      agentName: cfg.agentName,
+      generation
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/autopilot/kick", (req, res) => {
