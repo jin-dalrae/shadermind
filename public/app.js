@@ -26,8 +26,7 @@ class ShaderMindUI {
   constructor() {
     this.renderers = new Map();
     this.timelineRenderers = [];
-    this.dialogRenderer = null;
-    this.dialogOwnedRenderer = false;
+    this.detailRenderer = null;
     this.displayedGeneration = null;
     this.displayedBatchKey = null;
     this.lastGen = -1;
@@ -52,8 +51,6 @@ class ShaderMindUI {
     this.galleryKey = null;
     this.lastState = null;
     this.lastAutopilot = null;
-    this.sharedGridSuspended = false;
-    this.dialogSketchId = null;
     this.bodyScrollLocked = false;
     this.savedScrollY = 0;
     this.voiceCurator = new VoiceCurator(this);
@@ -79,6 +76,7 @@ class ShaderMindUI {
       btnGenerateNext: document.getElementById("btnGenerateNext"),
       btnRegenerateBatch: document.getElementById("btnRegenerateBatch"),
       shaderGrid: document.getElementById("shaderGrid"),
+      gridStatusBanner: document.getElementById("gridStatusBanner"),
       emptyState: document.getElementById("emptyState"),
       curationPanel: document.getElementById("curationPanel"),
       userOpinion: document.getElementById("userOpinion"),
@@ -93,6 +91,7 @@ class ShaderMindUI {
       gallerySub: document.getElementById("gallerySub"),
       galleryFilterGen: document.getElementById("galleryFilterGen"),
       galleryFilterRating: document.getElementById("galleryFilterRating"),
+      galleryRefreshThumbs: document.getElementById("galleryRefreshThumbs"),
       reflectionText: document.getElementById("reflectionText"),
       strategyText: document.getElementById("strategyText"),
       timelineList: document.getElementById("timelineList"),
@@ -109,30 +108,28 @@ class ShaderMindUI {
       monologueOutput: document.getElementById("monologueOutput"),
       monologueText: document.getElementById("monologueText"),
       logFeed: document.getElementById("logFeed"),
-      shaderDialog: document.getElementById("shaderDialog"),
-      dialogClose: document.getElementById("dialogClose"),
-      dialogCanvas: document.getElementById("dialogCanvas"),
-      dialogPoster: document.getElementById("dialogPoster"),
-      dialogError: document.getElementById("dialogError"),
-      dialogLoading: document.getElementById("dialogLoading"),
-      dialogHint: document.getElementById("dialogHint"),
-      dialogEyebrow: document.getElementById("dialogEyebrow"),
-      dialogTitle: document.getElementById("dialogTitle"),
-      dialogRating: document.getElementById("dialogRating"),
-      dialogRerate: document.getElementById("dialogRerate"),
-      dialogRateActions: document.getElementById("dialogRateActions"),
-      dialogRerateHint: document.getElementById("dialogRerateHint"),
-      dialogHypothesis: document.getElementById("dialogHypothesis"),
-      dialogStatement: document.getElementById("dialogStatement"),
-
-      dialogCode: document.getElementById("dialogCode")
+      studioDetail: document.getElementById("studioDetail"),
+      detailTitle: document.getElementById("detailTitle"),
+      detailSub: document.getElementById("detailSub"),
+      detailClose: document.getElementById("detailClose"),
+      detailCanvas: document.getElementById("detailCanvas"),
+      detailError: document.getElementById("detailError"),
+      detailPipelineStage: document.getElementById("detailPipelineStage"),
+      detailPipelinePanel: document.createElement("aside"),
+      detailProvenance: document.getElementById("detailProvenance"),
+      detailCode: document.getElementById("detailCode")
     };
 
-    this.els.dialogClose.addEventListener("click", () => this.closeDialog());
-    this.els.shaderDialog.addEventListener("click", (e) => {
-      if (e.target === this.els.shaderDialog) this.closeDialog();
+    this.detailSketch = null;
+    this.detailRenderer = null;
+    this.detailCanvasListeners = null;
+    this.detailListenId = 0;
+
+    this.els.detailClose?.addEventListener("click", () => this.closeDetailPane());
+    window.addEventListener("resize", () => {
+      if (this.detailRenderer?.gl) this.detailRenderer.relayout();
+       if (window.PipelineViewer?.relayoutInline) window.PipelineViewer.relayoutInline();
     });
-    this.els.shaderDialog.addEventListener("close", () => this.onDialogClosed());
     this.els.btnMonologue.addEventListener("click", () => this.fetchMonologue());
     this.els.btnSubmitFeedback.addEventListener("click", () => this.submitFeedback());
     this.els.btnGenerateNext.addEventListener("click", () => this.generateNextBatch());
@@ -142,17 +139,23 @@ class ShaderMindUI {
     });
     this.els.galleryPrev.addEventListener("click", () => this.changeGalleryPage(-1));
     this.els.galleryNext.addEventListener("click", () => this.changeGalleryPage(1));
-    this.els.galleryFilterGen.addEventListener("change", () => {
+    const onGalleryFilterChange = () => {
       this.galleryPage = 1;
       this.galleryKey = null;
       this.updateGallerySubcopy();
       this.loadGalleryPage();
-    });
-    this.els.galleryFilterRating.addEventListener("change", () => {
-      this.galleryPage = 1;
-      this.galleryKey = null;
-      this.loadGalleryPage();
-    });
+    };
+    if (this.els.galleryFilterGen) {
+      this.els.galleryFilterGen.addEventListener("change", onGalleryFilterChange);
+    }
+    if (this.els.galleryFilterRating) {
+      this.els.galleryFilterRating.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+        cb.addEventListener("change", onGalleryFilterChange);
+      });
+    }
+    if (this.els.galleryRefreshThumbs) {
+      this.els.galleryRefreshThumbs.addEventListener("click", () => this.refreshGalleryThumbnails());
+    }
     this.els.btnAutopilotStart.addEventListener("click", () => this.autopilotAction("start"));
     this.els.btnAutopilotStop.addEventListener("click", () => this.autopilotAction("stop"));
     this.els.btnAutopilotKick.addEventListener("click", () => this.autopilotAction("kick"));
@@ -160,6 +163,8 @@ class ShaderMindUI {
 
     this.voiceCurator.onStatusChange = (status) => this.updateVoiceStatus(status);
     this.initVoicePanel();
+
+    getSharedGridRenderer().onStatusChange((status) => this.updateGridStatusBanner(status));
 
     window.addEventListener("hashchange", () => this.syncPageFromHash());
     this.syncPageFromHash(true);
@@ -220,17 +225,130 @@ class ShaderMindUI {
     }
   }
 
+  getSelectedFilters(fieldsetId) {
+    const fieldset = document.getElementById(fieldsetId);
+    if (!fieldset) return [];
+    return Array.from(fieldset.querySelectorAll('input[type="checkbox"]:checked')).map((cb) => cb.value);
+  }
+
+  setSelectedFilters(fieldsetId, values) {
+    const fieldset = document.getElementById(fieldsetId);
+    if (!fieldset) return;
+    const set = new Set(values);
+    fieldset.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.checked = set.has(cb.value);
+    });
+  }
+
+  populateGenerationFilter() {
+    const container = this.els.galleryFilterGen;
+    if (!container) return;
+    const generations = new Set();
+    for (const s of this.sketches || []) {
+      if (s.generation != null) generations.add(s.generation);
+    }
+    for (const s of this.galleryItems || []) {
+      if (s.generation != null) generations.add(s.generation);
+    }
+    const sorted = [...generations].sort((a, b) => b - a);
+    if (!sorted.length) {
+      container.innerHTML = '<span class="filter-empty">No generations yet</span>';
+      return;
+    }
+    container.innerHTML = "";
+    for (const gen of sorted) {
+      const label = document.createElement("label");
+      label.className = "filter-chip";
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = String(gen);
+      label.appendChild(cb);
+      label.appendChild(document.createTextNode(` Gen ${gen}`));
+      container.appendChild(label);
+    }
+    container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
+      cb.addEventListener("change", () => {
+        this.galleryPage = 1;
+        this.galleryKey = null;
+        this.updateGallerySubcopy();
+        this.loadGalleryPage();
+      });
+    });
+  }
+
   galleryQueryParams() {
-    const gen = this.els.galleryFilterGen.value;
-    const rating = this.els.galleryFilterRating.value;
-    const limit = gen ? 50 : this.galleryLimit;
+    const gens = this.getSelectedFilters("galleryFilterGenField");
+    const ratings = this.getSelectedFilters("galleryFilterRatingField");
+    const limit = gens.length ? 100 : this.galleryLimit;
     const params = new URLSearchParams({
       page: String(this.galleryPage),
       limit: String(limit)
     });
-    if (gen) params.set("generation", gen);
-    if (rating) params.set("rating", rating);
+    for (const g of gens) params.append("generation", g);
+    for (const r of ratings) params.append("rating", r);
     return params;
+  }
+
+  updateGallerySubcopy() {
+    if (!this.els.gallerySub) return;
+    const gens = this.getSelectedFilters("galleryFilterGenField");
+    const ratings = this.getSelectedFilters("galleryFilterRatingField");
+    const parts = [];
+    if (gens.length) parts.push(`Gen ${gens.join(", ")}`);
+    if (ratings.length) parts.push(`Rating ${ratings.join(", ")}`);
+    parts.length = parts.length;
+    this.els.gallerySub.textContent = parts.length
+      ? `Filtered by ${parts.join(" · ")}`
+      : "Saved sketches and strategy milestones across generations.";
+  }
+
+  async refreshGalleryThumbnails() {
+    if (!this.els.galleryRefreshThumbs) return;
+    const btn = this.els.galleryRefreshThumbs;
+    btn.disabled = true;
+    const original = btn.textContent;
+    btn.textContent = "Refreshing…";
+    try {
+      const items = await this.runGalleryThumbnailMigrationNow();
+      const missing = items.filter((s) => !s.thumbnail || s.thumbnail.length < 100).length;
+      const captured = items.length - missing;
+      btn.textContent = missing === 0
+        ? `Done · ${captured}/${items.length}`
+        : `Captured ${captured}, ${missing} pending`;
+      window.setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 2500);
+    } catch (err) {
+      console.error("Refresh thumbnails failed:", err);
+      btn.textContent = "Failed — try again";
+      window.setTimeout(() => {
+        btn.textContent = original;
+        btn.disabled = false;
+      }, 2500);
+    }
+  }
+
+  async deleteGallerySketch(sketchId) {
+    if (!sketchId) return;
+    const confirmed = window.confirm(`Delete sketch ${sketchId}? This cannot be undone.`);
+    if (!confirmed) return;
+    try {
+      const res = await fetch(`/api/sketches/${encodeURIComponent(sketchId)}`, { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || `Delete failed (${res.status})`);
+      }
+      this.sketches = (this.sketches || []).filter((s) => s.id !== sketchId);
+      this.galleryItems = (this.galleryItems || []).filter((s) => s.id !== sketchId);
+      this.galleryKey = null;
+      this.renderGalleryGrid();
+      this.updateGallerySubcopy();
+      if (this.lastState) this.updateTimeline(this.lastState);
+    } catch (err) {
+      console.error("Delete failed:", err);
+      window.alert(`Could not delete ${sketchId}: ${err.message}`);
+    }
   }
 
   async loadGalleryPage() {
@@ -241,6 +359,7 @@ class ShaderMindUI {
       this.galleryItems = data.items || data;
       this.galleryPages = data.pages || 1;
       this.galleryPage = data.page || this.galleryPage;
+      this.populateGenerationFilter();
       this.renderGalleryGrid();
     } catch (err) {
       console.error(err);
@@ -304,9 +423,32 @@ class ShaderMindUI {
       cell.appendChild(thumb);
       cell.appendChild(caption);
       cell.appendChild(this.buildRateActions(sketch, (id, r) => this.updateSketchRating(id, r)));
+
+      const actions = document.createElement("div");
+      actions.className = "archive-actions";
+      const modelTag = sketch.model ? document.createElement("span") : null;
+      if (modelTag) {
+        modelTag.className = "archive-model-tag";
+        modelTag.textContent = sketch.model;
+        modelTag.title = `Provider: ${sketch.provider || "unknown"} · Generated: ${sketch.inferenceTimestamp || "unknown"}`;
+        actions.appendChild(modelTag);
+      }
+      const deleteBtn = document.createElement("button");
+      deleteBtn.type = "button";
+      deleteBtn.className = "archive-delete-btn";
+      deleteBtn.textContent = "Delete";
+      deleteBtn.title = `Delete ${sketch.id}`;
+      deleteBtn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        this.deleteGallerySketch(sketch.id);
+      });
+      actions.appendChild(deleteBtn);
+      cell.appendChild(actions);
+
       cell.addEventListener("click", (e) => {
         if (e.target.closest(".btn-rate")) return;
-        this.openDialog(sketch, window.scrollY, { allowRerate: true });
+        if (e.target.closest(".archive-delete-btn")) return;
+        this.selectSketch(sketch, { allowRerate: true });
       });
       this.els.archiveGrid.appendChild(cell);
     });
@@ -317,24 +459,20 @@ class ShaderMindUI {
   }
 
   updateGalleryFilters(state) {
-    const gen = state.generationCount || 0;
-    const select = this.els.galleryFilterGen;
-    const current = select.value;
-    const options = ['<option value="">All</option>'];
-    for (let g = gen; g >= 1; g--) {
-      options.push(`<option value="${g}">Gen ${g}</option>`);
-    }
-    select.innerHTML = options.join("");
-    if (current && Number(current) <= gen) select.value = current;
+    this.populateGenerationFilter();
     this.updateGallerySubcopy();
   }
 
   updateGallerySubcopy() {
     if (!this.els.gallerySub) return;
-    const gen = this.els.galleryFilterGen.value;
-    this.els.gallerySub.textContent = gen
-      ? `Generation ${gen} — click a sketch to review, or change 1–5 ratings inline.`
-      : "Saved sketches and strategy milestones across generations. Filter by generation to re-rate a past batch.";
+    const gens = this.getSelectedFilters("galleryFilterGenField");
+    const ratings = this.getSelectedFilters("galleryFilterRatingField");
+    const parts = [];
+    if (gens.length) parts.push(`Gen ${gens.join(", ")}`);
+    if (ratings.length) parts.push(`Rating ${ratings.join(", ")}`);
+    this.els.gallerySub.textContent = parts.length
+      ? `Filtered by ${parts.join(" · ")} — click a sketch to review.`
+      : "Saved sketches and strategy milestones across generations.";
   }
 
   buildRateActions(sketch, onRate) {
@@ -388,12 +526,9 @@ class ShaderMindUI {
       if (scoreEl) scoreEl.textContent = `${rating}/5`;
     }
 
-    if (this.dialogSketchId === sketchId) {
-      this.els.dialogRating.hidden = false;
-      this.els.dialogRating.textContent = `${rating} / 5`;
-      this.els.dialogRateActions?.querySelectorAll(".btn-rate").forEach(btn => {
-        btn.classList.toggle("is-selected", btn.classList.contains(`rate-${rating}`));
-      });
+    if (this.detailSketch?.id === sketchId) {
+      this.els.detailSub.textContent = this.els.detailSub.textContent.replace(/ · \d\/5$/, ` · ${rating}/5`);
+      this.populateDetailProvenance(this.detailSketch);
     }
   }
 
@@ -431,8 +566,9 @@ class ShaderMindUI {
         this.queueThumbnailBackfill(sketch);
       }
 
-      if (this.els.dialogRerateHint) {
-        this.els.dialogRerateHint.textContent = `Saved · ${rating}/5`;
+      if (this.els.detailSub) {
+        this.els.detailSub.textContent = this.els.detailSub.textContent.replace(/ · \d\/5$/, ` · ${rating}/5`);
+      }
       }
     } catch (err) {
       alert(`Rating error: ${err.message}`);
@@ -535,13 +671,10 @@ class ShaderMindUI {
   }
 
   async runGalleryThumbnailMigrationOnce() {
-    const key = galleryThumbMigrationKey();
-    if (localStorage.getItem(key) === "done") return;
-
     const sketches = await this.fetchAllGallerySketches();
     const needsUpgrade = sketches.filter(s => this.sketchNeedsThumbnail(s));
     if (!needsUpgrade.length) {
-      localStorage.setItem(key, "done");
+      localStorage.setItem(galleryThumbMigrationKey(), "done");
       return;
     }
 
@@ -558,6 +691,16 @@ class ShaderMindUI {
     }
 
     this.watchGalleryThumbMigrationComplete();
+  }
+
+  async runGalleryThumbnailMigrationNow() {
+    this.thumbBackfillAttempted.clear();
+    this.galleryKey = null;
+    localStorage.removeItem(galleryThumbMigrationKey());
+    this.galleryPage = 1;
+    await this.loadGalleryPage();
+    await this.runGalleryThumbnailMigrationOnce();
+    return this.fetchAllGallerySketches();
   }
 
   ensureThumbObserver() {
@@ -801,7 +944,7 @@ class ShaderMindUI {
 
       cell.addEventListener("click", (e) => {
         if (e.target.closest(".btn-rate")) return;
-        this.openDialog(sketch, window.scrollY);
+        this.selectSketch(sketch);
       });
       wrap.addEventListener("mousemove", (e) => {
         const rect = wrap.getBoundingClientRect();
@@ -848,6 +991,32 @@ class ShaderMindUI {
     const cfg = await this.voiceCurator.loadConfig();
     if (!cfg.enabled || !this.els.voicePanel) return;
     this.els.voicePanel.hidden = false;
+  }
+
+  updateGridStatusBanner(status) {
+    const banner = this.els.gridStatusBanner;
+    if (!banner) return;
+
+    if (!status.webglAvailable) {
+      banner.hidden = false;
+      banner.classList.remove("context-lost");
+      banner.textContent =
+        "WebGL is unavailable in this browser. Enable hardware acceleration " +
+        "(chrome://settings/system → Use graphics acceleration when available), " +
+        "or open DevTools → Application → Clear storage and reload. " +
+        "Shaders cannot render until WebGL is restored.";
+      return;
+    }
+
+    if (status.contextLost) {
+      banner.hidden = false;
+      banner.classList.add("context-lost");
+      banner.textContent = "WebGL context lost. Renderer is attempting recovery.";
+      return;
+    }
+
+    banner.hidden = true;
+    banner.textContent = "";
   }
 
   updateVoiceStatus(status) {
@@ -979,15 +1148,10 @@ class ShaderMindUI {
       : "Rate every shader from 1 to 5";
   }
 
-  captureDialogThumbnail() {
-    if (!this.dialogRenderer?.program) return null;
-    return this.dialogRenderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
-  }
-
-  async captureSketchThumbnail(sketch, { preferDialog = false } = {}) {
-    if (preferDialog && this.dialogRenderer?.program && this.dialogSketchId === sketch.id) {
-      const fromDialog = this.captureDialogThumbnail();
-      if (fromDialog) return fromDialog;
+  async captureSketchThumbnail(sketch, { preferDetail = false } = {}) {
+    if (preferDetail && this.detailRenderer?.program && this.detailSketch?.id === sketch.id) {
+      const fromDetail = this.detailRenderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
+      if (fromDetail) return fromDetail;
     }
 
     const grid = getSharedGridRenderer();
@@ -1032,8 +1196,8 @@ class ShaderMindUI {
       if (this.currentPage === "gallery") {
         this.renderGalleryGrid();
       }
-      if (this.dialogSketchId === sketch.id && this.els.dialogPoster) {
-        this.showDialogPoster(thumbnail);
+      if (this.detailSketch?.id === sketch.id && this.els.detailCanvas) {
+        this.detailRenderer?.canvas && (this.detailRenderer.canvas.style.opacity = "1");
       }
       return true;
     } catch (err) {
@@ -1065,11 +1229,9 @@ class ShaderMindUI {
 
   async drainThumbnailBackfill() {
     if (this.thumbBackfillBusy || !this.thumbBackfillQueue.length) return;
-    if (this.els.shaderDialog?.open) return;
     this.thumbBackfillBusy = true;
 
     while (this.thumbBackfillQueue.length) {
-      if (this.els.shaderDialog?.open) break;
 
       const sketch = this.thumbBackfillQueue.shift();
       if (!sketch || !this.sketchNeedsThumbnail(sketch)) continue;
@@ -1129,29 +1291,11 @@ class ShaderMindUI {
     }
   }
 
-  showDialogPoster(thumbnail) {
-    if (!this.els.dialogPoster || !thumbnail) return;
-    this.els.dialogPoster.src = thumbnail;
-    this.els.dialogPoster.hidden = false;
-    this.els.dialogPoster.classList.remove("is-hidden");
-  }
+  showDialogPoster() {}
 
-  hideDialogPoster() {
-    if (!this.els.dialogPoster) return;
-    this.els.dialogPoster.classList.add("is-hidden");
-    window.setTimeout(() => {
-      if (this.els.dialogPoster?.classList.contains("is-hidden")) {
-        this.els.dialogPoster.hidden = true;
-      }
-    }, 360);
-  }
+  hideDialogPoster() {}
 
-  clearDialogPoster() {
-    if (!this.els.dialogPoster) return;
-    this.els.dialogPoster.hidden = true;
-    this.els.dialogPoster.classList.remove("is-hidden");
-    this.els.dialogPoster.removeAttribute("src");
-  }
+  clearDialogPoster() {}
 
   refreshTimelineThumb(sketchId, thumbnail) {
     const btn = this.els.timelineList.querySelector(`[data-sketch-id="${sketchId}"]`);
@@ -1204,7 +1348,7 @@ class ShaderMindUI {
       this.observeThumbnailPending(thumb, sketch);
     }
 
-    thumb.addEventListener("click", () => this.openDialog(sketch, window.scrollY));
+    thumb.addEventListener("click", () => this.selectSketch(sketch));
     container.appendChild(thumb);
   }
 
@@ -1438,224 +1582,156 @@ class ShaderMindUI {
     return { ...cached, ...sketch, glsl: sketch.glsl || cached.glsl };
   }
 
-  suspendSharedGrid() {
-    if (this.sharedGridSuspended) return;
-    getSharedGridRenderer().suspend();
-    this.sharedGridSuspended = true;
-  }
-
-  resumeSharedGrid() {
-    if (!this.sharedGridSuspended) return;
-    getSharedGridRenderer().resume();
-    this.sharedGridSuspended = false;
-  }
-
-  disposeDialogRenderer() {
-    if (this.dialogOwnedRenderer && this.dialogRenderer) {
-      this.dialogRenderer.destroy();
-    }
-    this.dialogRenderer = null;
-    this.dialogOwnedRenderer = false;
-    this.dialogSketchId = null;
-    this.clearDialogPoster();
-    if (this.els.dialogCanvas) {
-      this.els.dialogCanvas.hidden = false;
-      this.els.dialogCanvas.style.opacity = "";
-    }
-    this.resumeSharedGrid();
-    this.drainThumbnailBackfill();
-  }
-
-  lockBodyScroll(scrollY = null) {
-    if (this.bodyScrollLocked) return;
-    this.savedScrollY = scrollY ?? window.scrollY ?? document.documentElement.scrollTop ?? 0;
-    // Set top BEFORE position:fixed — otherwise one frame shows the page top.
-    document.body.style.top = `-${this.savedScrollY}px`;
-    document.documentElement.classList.add("dialog-open");
-    document.body.classList.add("dialog-open");
-    this.bodyScrollLocked = true;
-  }
-
-  unlockBodyScroll() {
-    if (!this.bodyScrollLocked) return;
-    const y = this.savedScrollY;
-    document.documentElement.classList.remove("dialog-open");
-    document.body.classList.remove("dialog-open");
-    document.body.style.top = "";
-    this.bodyScrollLocked = false;
-    this.savedScrollY = 0;
-    window.scrollTo(0, y);
-  }
-
-  onDialogClosed() {
-    this.disposeDialogRenderer();
-    this.unlockBodyScroll();
-  }
-
-  waitForDialogLayout() {
-    return new Promise((resolve) => {
-      const wrap = this.els.dialogCanvas.parentElement;
-      let attempts = 0;
-
-      const ready = () => {
-        const rect = wrap?.getBoundingClientRect();
-        return rect && rect.width >= 32 && rect.height >= 32;
-      };
-
-      const finish = () => {
-        requestAnimationFrame(() => requestAnimationFrame(resolve));
-      };
-
-      if (ready()) {
-        finish();
-        return;
-      }
-
-      const poll = () => {
-        attempts += 1;
-        if (ready() || attempts >= 40) {
-          finish();
-          return;
-        }
-        requestAnimationFrame(poll);
-      };
-
-      if (wrap && typeof ResizeObserver !== "undefined") {
-        const observer = new ResizeObserver(() => {
-          if (!ready()) return;
-          observer.disconnect();
-          finish();
-        });
-        observer.observe(wrap);
-        requestAnimationFrame(poll);
-        return;
-      }
-
-      requestAnimationFrame(poll);
+  ensureDetailRenderer() {
+    if (this.detailRenderer) return;
+    if (!this.els.detailCanvas) return;
+    this.els.detailError.hidden = true;
+    this.els.detailError.textContent = "";
+    this.detailRenderer = new ShaderRenderer(this.els.detailCanvas, {
+      errorEl: this.els.detailError,
+      silent: true
     });
   }
 
-  mountDialogRerate(sketch, allowRerate) {
-    if (!this.els.dialogRerate || !this.els.dialogRateActions) return;
-    const show = Boolean(allowRerate && sketch?.id);
-    this.els.dialogRerate.hidden = !show;
-    if (!show) {
-      this.els.dialogRateActions.innerHTML = "";
-      return;
-    }
-
-    this.els.dialogRateActions.innerHTML = "";
-    this.els.dialogRateActions.appendChild(
-      this.buildRateActions(sketch, (id, r) => this.updateSketchRating(id, r))
-    );
-    if (this.els.dialogRerateHint) {
-      this.els.dialogRerateHint.textContent = "Changes save immediately and update learned taste.";
-    }
+  populateDetailProvenance(sketch) {
+    if (!this.els.detailProvenance) return;
+    const model = sketch.model || "(model not recorded)";
+    const provider = sketch.provider || "unknown";
+    const latency = sketch.inferenceLatencyMs != null ? `${sketch.inferenceLatencyMs} ms` : "(not recorded)";
+    const usage = sketch.inferenceUsage || {};
+    const totalTok = usage.totalTokens != null ? usage.totalTokens : "?";
+    const promptTok = usage.promptTokens != null ? usage.promptTokens : "?";
+    const completionTok = usage.completionTokens != null ? usage.completionTokens : "?";
+    const ts = sketch.inferenceTimestamp || "(not recorded)";
+    const dna = (sketch.dna || []).join(", ") || "(none)";
+    const patterns = (sketch.patternIds || []).join(", ") || "(none)";
+    this.els.detailProvenance.innerHTML = `
+      <div class="prov-row">
+        <span class="prov-label">Title</span><span class="prov-value">${this.esc(sketch.title || "Untitled")}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Type</span><span class="prov-value">${this.esc(sketch.type || "—")}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Generation</span><span class="prov-value">${this.esc(String(sketch.generation ?? "—"))}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">DNA</span><span class="prov-value">${this.esc(dna)}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Patterns</span><span class="prov-value">${this.esc(patterns)}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Provider · Model</span><span class="prov-value">${this.esc(provider)} · ${this.esc(model)}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Latency</span><span class="prov-value">${this.esc(latency)}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Tokens (total / prompt / completion)</span><span class="prov-value">${this.esc(String(totalTok))} / ${this.esc(String(promptTok))} / ${this.esc(String(completionTok))}</span>
+      </div>
+      <div class="prov-row">
+        <span class="prov-label">Generated at</span><span class="prov-value">${this.esc(ts)}</span>
+      </div>
+      ${sketch.hypothesis ? `<div class="prov-row"><span class="prov-label">Hypothesis</span><span class="prov-value">${this.esc(sketch.hypothesis)}</span></div>` : ""}
+    `;
   }
 
-  async openDialog(sketch, scrollY = null, { allowRerate = false } = {}) {
-    const openScrollY = scrollY ?? window.scrollY ?? document.documentElement.scrollTop ?? 0;
-
+  selectSketch(sketch, { allowRerate = false } = {}) {
     const resolved = this.resolveSketch(sketch);
     if (!resolved?.glsl) {
-      alert("Shader source unavailable for this sketch.");
+      console.warn("selectSketch: no GLSL available", resolved);
       return;
     }
 
-    if (this.els.shaderDialog.open) {
-      this.closeDialog();
-    }
+    this.detailSketch = resolved;
+    this.detailListenId = (this.detailListenId || 0) + 1;
+    const listenId = this.detailListenId;
 
-    this.dialogSketchId = resolved.id;
+    this.els.studioDetail.hidden = false;
+    this.els.detailTitle.textContent = resolved.title || "Untitled";
     const score = this.ratingValue(resolved.rating);
+    const ratingLabel = score ? ` · ${score}/5` : "";
+    this.els.detailSub.textContent = `Gen ${resolved.generation} · ${resolved.type || "sketch"}${ratingLabel}`;
 
-    this.els.dialogEyebrow.textContent = `Gen ${resolved.generation} · ${resolved.type || "sketch"}`;
-    this.els.dialogTitle.textContent = resolved.title || "Untitled";
-    this.els.dialogHypothesis.textContent = resolved.hypothesis || "";
-    this.els.dialogHypothesis.hidden = !resolved.hypothesis;
+    this.els.detailCode.textContent = resolved.glsl || "";
+    this.populateDetailProvenance(resolved);
 
-    if (score) {
-      this.els.dialogRating.hidden = false;
-      this.els.dialogRating.textContent = `${score} / 5`;
-    } else {
-      this.els.dialogRating.hidden = true;
-      this.els.dialogRating.textContent = "";
+    this.ensureDetailRenderer();
+    if (this.detailRenderer) {
+      this.detailRenderer.compileWhenReady(resolved.glsl);
     }
 
-    if (this.els.dialogStatement) {
-      this.els.dialogStatement.textContent = "";
-      this.els.dialogStatement.hidden = true;
-    }
-    this.els.dialogCode.textContent = resolved.glsl || "";
-    this.mountDialogRerate(resolved, allowRerate || this.currentPage === "gallery");
-
-    this.els.dialogError.hidden = true;
-    this.els.dialogError.textContent = "";
-    this.els.dialogLoading.hidden = false;
-    this.els.dialogHint.hidden = true;
-    this.els.dialogCanvas.hidden = false;
-    this.els.dialogCanvas.style.opacity = resolved.thumbnail ? "0" : "1";
-
-    if (resolved.thumbnail) {
-      this.showDialogPoster(resolved.thumbnail);
-    } else {
-      this.clearDialogPoster();
-    }
-
-    this.suspendSharedGrid();
-    this.lockBodyScroll(openScrollY);
-    this.els.shaderDialog.showModal();
-    if (typeof this.els.shaderDialog.focus === "function") {
-      this.els.shaderDialog.focus({ preventScroll: true });
-    }
-
-    await this.waitForDialogLayout();
-    await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
-
-    if (this.dialogSketchId !== resolved.id || !this.els.shaderDialog.open) return;
-
-    this.dialogRenderer = new ShaderRenderer(this.els.dialogCanvas, {
-      errorEl: this.els.dialogError,
-      loadingEl: this.els.dialogLoading,
-      hintEl: this.els.dialogHint,
-      onCompileResult: async (result) => {
-        if (this.dialogSketchId !== resolved.id) return;
-
-        if (result.success) {
-          this.els.dialogCanvas.style.opacity = "1";
-          this.hideDialogPoster();
-          if (this.sketchNeedsThumbnail(resolved) || this.thumbnailNeedsUpgrade(resolved)) {
-            const thumb = this.captureDialogThumbnail();
-            if (thumb) {
-              resolved.thumbnail = thumb;
-              await this.persistSketchThumbnail(resolved, thumb);
-            }
-          }
-          return;
-        }
-
-        if (resolved.thumbnail) {
-          this.els.dialogCanvas.hidden = true;
-          this.els.dialogLoading.hidden = true;
-          this.showDialogPoster(resolved.thumbnail);
-          if (this.els.dialogHint) {
-            this.els.dialogHint.hidden = false;
-            this.els.dialogHint.textContent = "static preview — live compile failed in this browser";
-          }
-        }
+    if (window.PipelineViewer?.setSketch && this.els.detailPipelineStage) {
+      if (!this.els.detailPipelinePanel) {
+        this.els.detailPipelinePanel = document.createElement("aside");
+        this.els.detailPipelinePanel.className = "pipeline-panel-inline";
+        this.els.detailPipelinePanel.innerHTML = `
+          <div class="pipeline-panel-head">
+            <h3 data-pipeline-header>Layer</h3>
+            <p class="pipeline-layer-hint">click a 3D box to see details</p>
+          </div>
+          <div class="pipeline-panel-body" data-pipeline-body></div>
+        `;
+        this.els.detailPipelineStage.parentNode.insertBefore(
+          this.els.detailPipelinePanel,
+          this.els.detailPipelineStage.nextSibling
+        );
       }
+      if (!this.pipelineViewerMounted) {
+        window.PipelineViewer.openInline(
+          resolved,
+          this.els.detailPipelineStage,
+          this.els.detailPipelinePanel
+        );
+        this.pipelineViewerMounted = true;
+      } else {
+        window.PipelineViewer.setSketch(resolved);
+      }
+    }
+
+    if (this.sketchNeedsThumbnail(resolved) || this.thumbnailNeedsUpgrade(resolved)) {
+      this.captureSketchThumbnail(resolved, { preferDetail: true })
+        .then((thumb) => {
+          if (thumb && this.detailListenId === listenId) {
+            this.persistSketchThumbnail(resolved, thumb);
+          }
+        })
+        .catch(() => {});
+    }
+
+    requestAnimationFrame(() => {
+      this.els.studioDetail?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
-    this.dialogOwnedRenderer = true;
-    this.dialogRenderer.compileWhenReady(resolved.glsl);
   }
 
-  closeDialog() {
-    if (!this.els.shaderDialog.open) {
-      this.disposeDialogRenderer();
-      this.unlockBodyScroll();
-      return;
+  closeDetailPane() {
+    this.els.studioDetail.hidden = true;
+    this.detailSketch = null;
+    if (window.PipelineViewer?.close) window.PipelineViewer.close();
+  }
+
+  ensureDialogLayout() { /* kept for compatibility — no-op in inline mode */ }
+
+  showDialogPoster() {}
+  hideDialogPoster() {}
+  clearDialogPoster() {}
+
+  openPipelineForCurrentDialog() {
+    if (!this.detailSketch) return;
+    const stage = this.els.detailPipelineStage;
+    if (!stage) return;
+    if (!this.pipelineViewerMounted && window.PipelineViewer?.openInline) {
+      window.PipelineViewer.openInline(
+        this.detailSketch,
+        stage,
+        this.els.detailPipelinePanel
+      );
+      this.pipelineViewerMounted = true;
+    } else if (stage.hidden !== false) {
+      this.els.studioDetail.hidden = false;
+      if (window.PipelineViewer?.setSketch) window.PipelineViewer.setSketch(this.detailSketch);
     }
-    this.els.shaderDialog.close();
   }
 
   clearTimelineRenderers() {

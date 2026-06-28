@@ -58,6 +58,8 @@
 
       <div class="shader-grid" id="shaderGrid"></div>
 
+      <div class="grid-status-banner" id="gridStatusBanner" hidden></div>
+
       <div class="empty-state" id="emptyState">
         <p>No batch yet. Add GEMINI_API_KEY to generate new art, or open Gallery to browse saved sketches.</p>
       </div>
@@ -74,6 +76,30 @@
           <button type="button" class="btn-submit" id="btnSubmitFeedback" disabled>Submit &amp; next batch</button>
         </div>
       </div>
+
+      <section class="studio-detail" id="studioDetail" hidden>
+        <div class="studio-detail-head">
+          <div>
+            <h3 id="detailTitle">Shader</h3>
+            <p class="studio-detail-sub" id="detailSub">Click a sketch above to inspect it</p>
+          </div>
+          <button type="button" class="studio-detail-close" id="detailClose" aria-label="Close detail panel">×</button>
+        </div>
+        <div class="studio-detail-grid">
+          <div class="studio-detail-canvas-wrap">
+            <canvas id="detailCanvas"></canvas>
+            <p class="studio-detail-compile-error" id="detailError" hidden></p>
+          </div>
+          <div class="studio-detail-pipeline" id="detailPipelineStage"></div>
+        </div>
+        <div class="studio-detail-meta">
+          <div class="studio-detail-provenance" id="detailProvenance"></div>
+          <details class="studio-detail-source-details">
+            <summary>GLSL source</summary>
+            <pre class="dialog-code"><code id="detailCode"></code></pre>
+          </details>
+        </div>
+      </section>
     </section>
 
     <!-- Gallery: archive + evolution -->
@@ -85,23 +111,21 @@
             <p class="page-sub" id="gallerySub">Saved sketches and strategy milestones across generations.</p>
           </div>
           <div class="gallery-filters">
-            <label class="filter-field">
-              <span>Generation</span>
-              <select id="galleryFilterGen">
-                <option value="">All</option>
-              </select>
-            </label>
-            <label class="filter-field">
-              <span>Rating</span>
-              <select id="galleryFilterRating">
-                <option value="">All</option>
-                <option value="5">5</option>
-                <option value="4">4+</option>
-                <option value="3">3</option>
-                <option value="2">2−</option>
-                <option value="1">1</option>
-              </select>
-            </label>
+            <fieldset class="filter-field filter-multi" id="galleryFilterGenField">
+              <legend>Generation</legend>
+              <div class="filter-chips" id="galleryFilterGen"></div>
+            </fieldset>
+            <fieldset class="filter-field filter-multi" id="galleryFilterRatingField">
+              <legend>Rating</legend>
+              <div class="filter-chips" id="galleryFilterRating">
+                <label class="filter-chip"><input type="checkbox" value="5"> 5</label>
+                <label class="filter-chip"><input type="checkbox" value="4"> 4+</label>
+                <label class="filter-chip"><input type="checkbox" value="3"> 3</label>
+                <label class="filter-chip"><input type="checkbox" value="2"> 2−</label>
+                <label class="filter-chip"><input type="checkbox" value="1"> 1</label>
+              </div>
+            </fieldset>
+            <button type="button" class="btn-secondary btn-refresh-thumbs" id="galleryRefreshThumbs">Refresh thumbnails</button>
           </div>
         </div>
 
@@ -196,45 +220,7 @@
     </section>
   </main>
 
-  <dialog class="shader-dialog" id="shaderDialog" aria-labelledby="dialogTitle" tabindex="-1">
-    <div class="dialog-shell">
-      <header class="dialog-header">
-        <div class="dialog-header-text">
-          <p class="dialog-eyebrow" id="dialogEyebrow"></p>
-          <h2 id="dialogTitle">Shader</h2>
-        </div>
-        <div class="dialog-header-actions">
-          <span class="dialog-rating" id="dialogRating" hidden></span>
-          <button type="button" class="dialog-close" id="dialogClose" aria-label="Close">Close</button>
-        </div>
-      </header>
-      <div class="dialog-body">
-        <section class="dialog-preview">
-          <div class="dialog-canvas-wrap">
-            <img id="dialogPoster" class="dialog-poster" alt="" hidden />
-            <canvas id="dialogCanvas"></canvas>
-            <p class="dialog-hint" id="dialogHint">move pointer to interact</p>
-            <p class="dialog-loading" id="dialogLoading">compiling shader…</p>
-          </div>
-          <p class="dialog-compile-error" id="dialogError" hidden></p>
-        </section>
-        <aside class="dialog-meta">
-          <div class="dialog-rerate" id="dialogRerate" hidden>
-            <p class="dialog-rerate-label">Your rating</p>
-            <div class="rate-actions dialog-rate-actions" id="dialogRateActions"></div>
-            <p class="dialog-rerate-hint" id="dialogRerateHint">Changes save immediately and update learned taste.</p>
-          </div>
-          <p class="dialog-hypothesis" id="dialogHypothesis"></p>
-          <p class="dialog-statement" id="dialogStatement" hidden></p>
-          <details class="dialog-source-details" open>
-            <summary>GLSL source</summary>
-            <pre class="dialog-code"><code id="dialogCode"></code></pre>
-          </details>
-        </aside>
-      </div>
-    </div>
-  </dialog>
-
-  <script type="module" src="app.js?v=34"></script>
+  <script type="module" src="pipeline-viewer.js?v=2"></script>
+  <script type="module" src="app.js?v=36"></script>
 </body>
 </html>

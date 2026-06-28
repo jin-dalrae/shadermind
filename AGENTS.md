@@ -237,6 +237,8 @@ Grid uses [`shared-grid-renderer.js`](./public/shared-grid-renderer.js) (one Web
 | POST | `/api/generate` | Manual batch (`{ focus: string }`) |
 | POST | `/api/feedback` | Ratings 1–5 + optional opinion → evolve + release autopilot gate |
 | POST | `/api/sketches/:id/compile-result` | Client compile success/failure during curation (LEARNING) |
+| GET | `/api/inference/metrics` | Token + latency aggregates over DO/Gemini calls; `?task=` and `?since=` filters |
+| POST | `/api/inference/clear` | Reset the in-memory inference metrics ring buffer |
 | GET | `/api/narrative` | Gemini monologue over lifetime stats |
 | POST | `/api/reset-baseline` | Reset strategy/heuristics; **keeps** sketch history |
 

@@ -179,17 +179,14 @@ The app is a single scrolling experience with four primary regions, plus three b
 
 ### Per-task model pools (DigitalOcean primary)
 
-| Task | Env override | Default pool |
+| Knob | Default | Purpose |
 |---|---|---|
-| GLSL | `DO_MODELS_GLSL` | `qwen3-coder-flash → glm-5.2 → llama3.3-70b-instruct` |
-| Planning | `DO_MODELS_PLANNING` | `qwen3-coder-flash → llama3.3-70b-instruct → mistral-3-14B` |
-| Evolution | `DO_MODELS_EVOLUTION` | `deepseek-4-flash → llama-4-maverick → llama3.3-70b-instruct` |
-| Curation | `DO_MODELS_CURATION` | `llama3.3-70b-instruct → mistral-3-14B → deepseek-4-flash` |
-| Narrative | `DO_MODELS_NARRATIVE` | `llama-4-maverick → deepseek-4-flash → llama3.3-70b-instruct` |
-| Consolidation | `DO_MODELS_CONSOLIDATION` | `deepseek-4-flash → llama3.3-70b-instruct` |
-| Routing | `DO_INFERENCE_ROUTER` | All tasks route through `router:{name}` if set |
+| `DO_INFERENCE_MODEL` | `claude-opus-4.8` | Single model name driving every AI task |
+| `DO_MODELS_<TASK>` (advanced) | falls back to `DO_INFERENCE_MODEL` | Override one task at a time |
+| `DO_INFERENCE_ROUTER` | unset | Routes all calls through a DO Inference Router with `router:<name>` header |
+| `ALLOW_GEMINI_FALLBACK` | `false` | Falls through to Gemini after exhaustion |
 
-Each pool is tried in order, with `retriesPerModel + 1` attempts before falling through. The first model is also used for the "fast" single-call batch path (`getTaskModels("glsl").slice(0, 1)`).
+Each model attempt gets `retriesPerModel + 1` tries before falling through. The first model in the per-task pool (or `DO_INFERENCE_MODEL` if no per-task override) is used for the "fast" single-call batch path.
 
 ### Gemini fallback (opt-in)
 

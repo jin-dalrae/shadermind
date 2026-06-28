@@ -3,7 +3,7 @@
 > **Hook:**
 > *"An agent that draws. You steer. It learns your taste — until you become the artist you wanted to be."*
 
-> **Document status:** Updated 2026-06-28 to match the implementation on `LEARNING` branch. Earlier revisions claimed Gemini-only inference and a fixed 5-3-2/10-shader batch. The runtime is multi-model (DigitalOcean primary with Gemini fallback) with a configurable batch. Voice curator and pattern library added since the original pitch.
+> **Document status:** Updated 2026-06-28 to match the implementation on `LEARNING` branch. Earlier revisions claimed Gemini-only inference and a fixed 5-3-2/10-shader batch. The runtime is Claude Opus 4.8 via DigitalOcean Inference across all six per-task pools with a 30-second timeout cap and `GLSL_MAX_ATTEMPTS=1` (tight retries for sub-3-minute cycles), MiniMax M3 opt-in via `DO_MODELS_*` env, and Gemini 3.5 Flash opt-in fallback. Voice curator and pattern library added since the original pitch.
 
 ---
 
@@ -47,12 +47,9 @@
 
 ## Slide 4: The Adaptive Engine — Multi-Model Inference + Adaptive Batch
 
-* **Per-task model pools on DigitalOcean Inference:**
-  * GLSL → `qwen3-coder-flash → glm-5.2 → llama3.3-70b-instruct`
-  * Planning → `qwen3-coder-flash → llama3.3-70b-instruct → mistral-3-14B`
-  * Evolution → `deepseek-4-flash → llama-4-maverick → llama3.3-70b-instruct`
-  * Curation / Narrative / Consolidation → task-specific pools
-* **Gemini fallback** (opt-in): `gemini-3.5-flash` only when `ALLOW_GEMINI_FALLBACK=true` AND the DO pool exhausts. Demo runs on DO by default; toggle on for a Gemini-pure path.
+* **Single AI model across all six tasks:** `claude-opus-4.8` via DigitalOcean Inference, set globally via `DO_INFERENCE_MODEL` (one knob). Set `DO_MODELS_<TASK>` env var to override one task at a time. **30-second hard cap** on every Opus call via `AI_TIMEOUT_MS` (wall-clock AbortSignal). `GLSL_MAX_ATTEMPTS=1` (one retry per shader) keeps cycles in the 2–3 min budget.
+* **DigitalOcean Inference Router** (opt-in): `DO_INFERENCE_ROUTER` overrides MiniMax and routes every task through DO with the longer `AI_TIMEOUT_MS` cap.
+* **Gemini fallback** (opt-in): `gemini-3.5-flash` only when `ALLOW_GEMINI_FALLBACK=true` AND MiniMax/DO pool exhausts.
 * **Adaptive batch composition** — `getBatchDistribution(BATCH_SIZE)`:
   * Default `BATCH_SIZE=3` → 1 evolutionary / 1 directive / 1 mutation (fast demo cadence)
   * `BATCH_SIZE=10` → the canonical 5 evolutionary / 3 directive / 2 mutation
@@ -104,7 +101,7 @@ ShaderMind doesn't just track your ratings — it learns from your code.
 
 2. **0:12–0:30 | The Loop (no clicks needed)**
    * *Visual:* Autopilot pill shows *generating → awaiting human → evolving*.
-   * *Script:* "Watch: DigitalOcean inference writes GLSL, the human rates 1–5, the agent critiques each sketch, rebuilds preference memory, and rewrites its own strategy genome."
+   * *Script:* "Watch: Claude Opus 4.8 writes GLSL with a 30-second cap per call, the human rates 1–5, the agent critiques each sketch, rebuilds preference memory, and rewrites its own strategy genome."
 
 3. **0:30–0:45 | Code-Aware Inheritance (PLUS parallel)**
    * *Visual:* Mind panel showing top heuristics + `preferenceMemory.prefer[]` + pattern library rank.
@@ -124,5 +121,5 @@ Learning to summarize user information for personalized reinforcement
 learning from human feedback. arXiv:2507.13579.
 https://arxiv.org/abs/2507.13579
 
-DigitalOcean Inference — https://docs.digitalocean.com/products/gradient-ai-platform/how-to/use-serverless-inference/
+DigitalOcean Inference — https://docs.digitalocean.com/products/gradient-ai-platform/how-to/use-serverless-inference/ (default provider; MiniMax M3 opt-in via env)
 ```

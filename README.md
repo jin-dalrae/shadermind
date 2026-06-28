@@ -154,20 +154,14 @@ Each sketch also gets **DNA tags**: 2–4 lowercase words for concrete math/colo
 
 ### AI provider & models
 
-**Primary:** DigitalOcean Inference (`https://inference.do-ai.run/v1`) via `lib/ai.js`. Set `DO_INFERENCE_ROUTER` to route every task through a single DO Inference Router (`router:{name}` header).
+**Primary:** DigitalOcean Inference (`https://inference.do-ai.run/v1`) via `lib/ai.js`. One model name drives every AI task (GLSL, planning, evolution, curation, narrative, consolidation). Set `DO_INFERENCE_MODEL` in `.env` to override the default (`claude-opus-4.8`). Set `DO_INFERENCE_ROUTER` to route every task through a single DO Inference Router (`router:{name}` header).
 
-| Task | Env override | Default model pool |
-|------|--------------|-------------------|
-| GLSL (fast batch + per-shader) | `DO_MODELS_GLSL` | `qwen3-coder-flash` → `glm-5.2` → `llama3.3-70b-instruct` |
-| Metadata planning (staged) | `DO_MODELS_PLANNING` | `qwen3-coder-flash` → `llama3.3-70b-instruct` → `mistral-3-14B` |
-| Strategy evolution | `DO_MODELS_EVOLUTION` | `deepseek-4-flash` → `llama-4-maverick` → `llama3.3-70b-instruct` |
-| Autonomous curation | `DO_MODELS_CURATION` | `llama3.3-70b-instruct` → `mistral-3-14B` → `deepseek-4-flash` |
-| Artistic monologue | `DO_MODELS_NARRATIVE` | `llama-4-maverick` → `deepseek-4-flash` → `llama3.3-70b-instruct` |
-| Memory consolidation | `DO_MODELS_CONSOLIDATION` | `deepseek-4-flash` → `llama3.3-70b-instruct` |
-
-**Fast batch** uses only the **first** GLSL model (`getTaskModels("glsl").slice(0, 1)`).
-**Per-shader** uses first model on attempt 1; later attempts fall through the full pool.
-**Optional fallback:** `ALLOW_GEMINI_FALLBACK=true` + `GEMINI_API_KEY` → Gemini (`GEMINI_GLSL_MODEL`, default `gemini-3.5-flash`) after DO pool exhaustion. Default `GEMINI_MODEL` is also `gemini-3.5-flash` for planning/curation/evolution/narrative.
+| Knob | Default | Purpose |
+|---|---|---|
+| `DO_INFERENCE_MODEL` | `claude-opus-4.8` | Single model name used for every AI task |
+| `DO_MODELS_<TASK>` (advanced) | falls back to `DO_INFERENCE_MODEL` | Comma-separated fallback chain for one task at a time |
+| `DO_INFERENCE_ROUTER` | unset | Routes all calls through a DO Inference Router with `router:<name>` header |
+| `ALLOW_GEMINI_FALLBACK` | `false` | If true, exhausted calls fall to Gemini (`gemini-3.5-flash` by default) |
 
 **Voice curator:** the LiveKit agent in `agent/` (sibling project) runs Gemini for its conversation loop. Configure separately via `npm run agent:dev`.
 
@@ -237,7 +231,6 @@ Context injected:
 |--------|----------|
 | `strategyForPrompt(db.currentStrategy)` | Aesthetic genome (max 500 chars) |
 | `db.heuristics` (up to 4) | Learned rules |
-| `buildRemixSection(db)` | Last 3 rated ≥ 4 — title, hypothesis, DNA, **truncated GLSL** (80 lines) |
 | `buildPreferenceSummary(preferenceMemory)` | Evidence-backed prefer/avoid rules (if `CODE_AWARE_LEARNING`) |
 | `selectLearningExamples()` + `buildExampleDescriptions()` | 4 past sketches — **descriptions only**, no raw GLSL in planning |
 | `MATH_COOKBOOK` | Full technique menu |
@@ -387,6 +380,48 @@ The Studio's **Talk to ShaderMind** button opens a LiveKit voice session in room
 - The agent speaks via **MiniMax TTS** (`MINIMAX_API_KEY`, default model `speech-02-turbo`).
 - Required env: `LIVEKIT_URL`, `LIVEKIT_API_KEY`, `LIVEKIT_API_SECRET`, `LIVEKIT_AGENT_NAME`, `SHADERMIND_PUBLIC_URL`, `SHADERMIND_API_URL`. The button silently no-ops when any required LiveKit env is missing.
 
+### Inference metrics (token usage + latency)
+
+Every DigitalOcean and Gemini call is recorded in an in-memory ring buffer (default cap 200, FIFO eviction) with prompt / completion / total tokens and per-call latency. The buffer is exposed via two HTTP endpoints and supports filtering by task and timestamp:
+
+```bash
+# Aggregate totals + per-task + per-model + last 20 calls
+curl -s http://localhost:8080/api/inference/metrics | jq
+
+# Filter to GLSL only
+curl -s 'http://localhost:8080/api/inference/metrics?task=glsl' | jq
+
+# Reset the buffer
+curl -X POST http://localhost:8080/api/inference/clear
+```
+
+Response shape:
+```json
+{
+  "cap": 200,
+  "bufferSize": 47,
+  "totals": {
+    "calls": 47,
+    "successes": 45,
+    "errors": 2,
+    "totalTokens": 312088,
+    "promptTokens": 271554,
+    "completionTokens": 40534,
+    "avgLatencyMs": 11820,
+    "p50LatencyMs": 9800,
+    "p95LatencyMs": 28400
+  },
+  "byTask": { "glsl": { "calls": 12, "totalTokens": 165000, "avgLatencyMs": 14300 }, ... },
+  "byModel": { "claude-opus-4.8": { "calls": 45, "totalTokens": 308200 }, ... },
+  "recent": [ { "task": "evolution", "model": "claude-opus-4.8", "latencyMs": 4200, "usage": {...}, "success": true, ... } ]
+}
+```
+
+To print every call to stdout (in addition to in-memory tracking), set `LOG_INFERENCE=true` in `.env`:
+```
+[inference] task=glsl provider=digitalocean model=claude-opus-4.8 attempt=0 latency=4200ms success=true tokens=8420 (prompt=7611 completion=809) label=fast batch gen 5
+```
+
 ---
 
 ## Quick start
@@ -434,6 +469,18 @@ See `.do/app.yaml` and `Dockerfile` for reference configs.
 
 ## Configuration highlights
 
+### Three independent auth surfaces
+
+| Surface | Env vars | Used by |
+|---|---|---|
+| **MiniMax M3 inference** (default for every AI call) | `MINIMAX_API_KEY` + `MINIMAX_API_BASE` + `MINIMAX_TIMEOUT_MS` (5s cap) + `MINIMAX_INFERENCE_MODEL` | `lib/ai.js` — GLSL / planning / evolution / curation / narrative / consolidation |
+| **LiveKit voice room** | `LIVEKIT_URL` + `LIVEKIT_API_KEY` + `LIVEKIT_API_SECRET` + `LIVEKIT_AGENT_NAME` | `lib/livekit.js` — "Talk to ShaderMind" button. Requires the sibling `agent/` project running. |
+| **MiniMax TTS** (used by the LiveKit agent only) | `MINIMAX_API_KEY` (shared with inference) + `MINIMAX_TTS_MODEL` | `agent/` (LiveKit agent) — NOT used by the main server |
+
+These surfaces are independent. Setting LiveKit keys without MiniMax keys still gives you the Studio (just no voice curator). Setting MiniMax keys without LiveKit keys still gives you generation (just no voice curator). Both are needed for the full demo.
+
+### Knobs
+
 | Variable | Default | Purpose |
 |---|---|---|
 | `LEARNING_MODE` | `human` | `human` · `autonomous` · `hybrid` |
@@ -456,7 +503,7 @@ Full list in [`.env.example`](.env.example).
 
 **Prizes**
 
-- **DigitalOcean** — Inference-native stack with per-task model pools (`qwen3-coder-flash`, `glm-5.2`, `llama-4-maverick`, etc.), App Platform deploy, lightweight Node server on `8080`. Inference Router supported via `DO_INFERENCE_ROUTER`.
+- **DigitalOcean** — Inference-native stack with Claude Opus 4.8 across all six per-task model pools (`DO_MODELS_PLANNING`, `DO_MODELS_GLSL`, `DO_MODELS_EVOLUTION`, `DO_MODELS_CURATION`, `DO_MODELS_NARRATIVE`, `DO_MODELS_CONSOLIDATION`), App Platform deploy, lightweight Node server on `8080`. Inference Router supported via `DO_INFERENCE_ROUTER`. Override any task with a comma-separated fallback pool.
 - **Gemini** — Optional fallback path (`ALLOW_GEMINI_FALLBACK=true`) after DO pool exhaustion; default `gemini-3.5-flash`. Also powers the voice curator agent via the LiveKit loop.
 
 ---
@@ -478,7 +525,7 @@ shadermind/
 │   │   ├── similarity.js       # Jaccard 5-shingle similarity guard
 │   │   ├── critique.js         # Per-sketch critique labels + summary
 │   │   └── strategy.js         # Sanitizer + validator for evolved strategy
-│   ├── memory.js               # assembleWorkingMemory + buildRemixSection + consolidateMemory
+│   ├── memory.js               # assembleWorkingMemory + consolidateMemory
 │   ├── math-cookbook.js        # Compact + full technique reference for prompts
 │   ├── learnopengl/            # LearnOpenGL discipline block injected into GLSL prompts
 │   ├── shader-tutorial/        # Shader-tutorial curriculum block

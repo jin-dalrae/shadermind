@@ -4,14 +4,14 @@
   "description": "ShaderMind — autonomous GLSL artist with continual learning via Gemini.",
   "main": "server.js",
   "type": "module",
-  "scripts": {
+"scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "test": "node --test",
     "migrate:mongo": "node scripts/migrate-json-to-mongo.js",
+    "sanitize:strategy": "node scripts/sanitize-strategy.js",
+    "sanitize:strategy:dry": "node scripts/sanitize-strategy.js --dry-run",
     "repair:glsl": "node scripts/repair-glsl.js",
-    "repair:gallery": "node scripts/repair-gallery-glsl.js",
-    "purge:placeholders": "node scripts/purge-placeholder-sketches.js",
     "agent:install": "npm install --prefix agent",
     "agent:dev": "npm run dev --prefix agent",
     "agent:start": "npm run start --prefix agent"

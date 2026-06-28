@@ -40,6 +40,8 @@ class SharedGridRenderer {
     this.imageData = this.snapCtx.createImageData(RENDER_SIZE, RENDER_SIZE);
 
     this.gl = null;
+    this.glVendor = null;
+    this.glRenderer = null;
     this.cells = new Map();
     this.programs = new Map();
     this.buffer = null;
@@ -47,6 +49,7 @@ class SharedGridRenderer {
     this.startTime = Date.now();
     this.mouseX = 0.5;
     this.mouseY = 0.5;
+    this.statusListeners = new Set();
     this.initGl();
   }
 
@@ -67,11 +70,44 @@ class SharedGridRenderer {
     this.buffer = null;
 
     if (this.gl) {
+      const dbg = this.gl.getExtension("WEBGL_debug_renderer_info");
+      this.glVendor = dbg ? this.gl.getParameter(dbg.UNMASKED_VENDOR_WEBGL) : this.gl.getParameter(this.gl.VENDOR);
+      this.glRenderer = dbg ? this.gl.getParameter(dbg.UNMASKED_RENDERER_WEBGL) : this.gl.getParameter(this.gl.RENDERER);
       this.initGeometry();
       if (!this.animationFrameId) this.start();
     } else {
       console.error("SharedGridRenderer: WebGL unavailable — enable hardware acceleration in Chrome.");
     }
+    this.notifyStatus();
+  }
+
+  onStatusChange(listener) {
+    this.statusListeners.add(listener);
+    listener(this.getStatus());
+    return () => this.statusListeners.delete(listener);
+  }
+
+  notifyStatus() {
+    const status = this.getStatus();
+    this.statusListeners.forEach((fn) => {
+      try {
+        fn(status);
+      } catch (err) {
+        console.warn("SharedGridRenderer status listener threw:", err);
+      }
+    });
+  }
+
+  getStatus() {
+    return {
+      webglAvailable: Boolean(this.gl),
+      contextLost: this.gl ? this.gl.isContextLost() : false,
+      glVendor: this.glVendor,
+      glRenderer: this.glRenderer,
+      programCount: this.programs.size,
+      cellCount: this.cells.size,
+      animating: Boolean(this.animationFrameId)
+    };
   }
 
   initGeometry() {
@@ -186,15 +222,23 @@ class SharedGridRenderer {
       });
     }
 
+    const wrap = displayCanvas.parentElement;
+    let errEl = wrap?.querySelector(".shader-error");
+    if (!errEl && wrap) {
+      errEl = document.createElement("div");
+      errEl.className = "shader-error";
+      wrap.appendChild(errEl);
+    }
+
     const cellEntry = {
       displayCanvas,
       glsl,
       ctx2d,
-      errEl: displayCanvas.parentElement?.querySelector(".shader-error")
+      errEl,
+      wrap
     };
     this.cells.set(id, cellEntry);
 
-    const wrap = displayCanvas.parentElement;
     if (wrap) {
       const observer = new ResizeObserver(() => this.paintCell(id));
       observer.observe(wrap);
@@ -322,7 +366,10 @@ class SharedGridRenderer {
 
     if (!gl || gl.isContextLost()) {
       this.initGl();
-      if (!this.gl) return;
+      if (!this.gl) {
+        this.surfaceCellError(cell, "WebGL context unavailable — enable hardware acceleration in chrome://settings/system");
+        return;
+      }
     }
 
     const wrap = cell.displayCanvas.parentElement;
@@ -341,8 +388,7 @@ class SharedGridRenderer {
 
     if (cell.errEl) {
       if (entry?.error) {
-        cell.errEl.textContent = `Fragment Shader Compile Error:\n${entry.error}`;
-        cell.errEl.classList.add("active");
+        this.surfaceCellError(cell, `Fragment Shader Compile Error:\n${entry.error}`);
       } else {
         cell.errEl.textContent = "";
         cell.errEl.classList.remove("active");
@@ -394,6 +440,7 @@ class SharedGridRenderer {
     const ext = gl.getExtension("WEBGL_lose_context");
     if (ext) ext.loseContext();
     this.gl = null;
+    this.notifyStatus();
   }
 
   /** Re-acquire WebGL after the dialog closes and repaint registered cells. */
@@ -408,6 +455,20 @@ class SharedGridRenderer {
         for (const id of this.cells.keys()) this.paintCell(id);
       });
     });
+    this.notifyStatus();
+  }
+
+  surfaceCellError(cell, message) {
+    if (cell.errEl) {
+      cell.errEl.textContent = message;
+      cell.errEl.classList.add("active");
+    }
+    if (cell.ctx2d && cell.displayCanvas) {
+      const w = cell.displayCanvas.width || 100;
+      const h = cell.displayCanvas.height || 100;
+      cell.ctx2d.fillStyle = "#1a0808";
+      cell.ctx2d.fillRect(0, 0, w, h);
+    }
   }
 }
 
