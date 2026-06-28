@@ -10,5 +10,5 @@ export const THUMB_CAPTURE_VERSION = 3;
 export const THUMB_LEGACY_MAX_CHARS = 32000;
 
 export function galleryThumbMigrationKey() {
-  return `shadermind_thumb_v${THUMB_CAPTURE_VERSION}`;
+  return `shadermind_thumb_v${THUMB_CAPTURE_VERSION}_glsl`;
 }

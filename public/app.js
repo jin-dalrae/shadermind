@@ -484,6 +484,7 @@ class ShaderMindUI {
       const version = Number(sketchOrThumb.thumbnailVersion) || 0;
       if (!thumb) return true;
       if (version >= THUMB_CAPTURE_VERSION) return false;
+      if (version > 0) return true;
       return thumb.length < THUMB_LEGACY_MAX_CHARS;
     }
     const thumb = sketchOrThumb;
@@ -494,8 +495,10 @@ class ShaderMindUI {
     if (!sketch?.id) return false;
     if (this.ratingValue(sketch.rating) < 4) return false;
     if (this.thumbBackfillAttempted.has(sketch.id)) return false;
-    if (sketch.compile?.success === false) return false;
-    return this.thumbnailNeedsUpgrade(sketch);
+    if (!this.thumbnailNeedsUpgrade(sketch)) return false;
+    // Stale compile failures (pre-GLSL-patch) must not block HD thumbnail retries.
+    if (sketch.compile?.success === false && sketch.thumbnail) return false;
+    return true;
   }
 
   async fetchAllHighRatedSketches() {
