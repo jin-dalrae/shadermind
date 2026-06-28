@@ -154,9 +154,11 @@ export class MongoStorage {
     const db = await this.connect();
     const filter = {};
     if (generation != null) filter.generation = Number(generation);
-    if (rating === "4") filter.rating = { $gte: 4 };
-    else if (rating === "2") filter.rating = { $lte: 2 };
-    else if (rating) filter.rating = Number(rating);
+    if (rating === "4") {
+      filter.$or = [{ rating: { $gte: 4 } }, { rating: "good" }];
+    } else if (rating === "2") {
+      filter.$or = [{ rating: { $lte: 2 } }, { rating: "bad" }];
+    } else if (rating) filter.rating = Number(rating);
 
     const total = await db.collection("sketches").countDocuments(filter);
     const skip = (Math.max(1, page) - 1) * limit;

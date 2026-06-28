@@ -2,16 +2,29 @@
  * One shared WebGL context renders all grid thumbnails.
  * Copies pixels via readPixels (Chrome-safe; drawImage from WebGL canvas is flaky).
  */
+import { patchGlslForWebGL } from "./glsl-patch.js?v=10";
+
 const MAX_PROGRAMS = 24;
 const RENDER_SIZE = 512;
 
 function sanitizeGlslSource(source) {
-  if (typeof source !== "string") return source;
+  if (typeof source !== "string") return "";
   let cleaned = source.trim();
   if (cleaned.startsWith("```")) {
-    cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/, "");
+    cleaned = cleaned.replace(/^```(?:glsl)?\s*/i, "").replace(/\s*```$/m, "");
   }
-  return cleaned.replace(/\\n/g, "\n");
+  cleaned = cleaned.replace(/\\n/g, "\n");
+  cleaned = cleaned.replace(/\bout\s+vec4\s+FragColor\s*;/g, "");
+  cleaned = cleaned.replace(/\bFragColor\s*=/g, "gl_FragColor =");
+  cleaned = cleaned.replace(/\btexture\s*\(/g, "texture2D(");
+  if (!/\bprecision\s+(lowp|mediump|highp)\s+float/.test(cleaned)) {
+    if (/\bprecision\s+\w+\s+float/.test(cleaned)) {
+      cleaned = cleaned.replace(/\bprecision\s+\w+\s+float\s*;/g, "precision mediump float;");
+    } else {
+      cleaned = `precision mediump float;\n${cleaned}`;
+    }
+  }
+  return patchGlslForWebGL(cleaned);
 }
 
 class SharedGridRenderer {

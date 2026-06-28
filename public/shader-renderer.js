@@ -1,4 +1,4 @@
-import { patchGlslForWebGL } from "./glsl-patch.js?v=9";
+import { patchGlslForWebGL } from "./glsl-patch.js?v=10";
 import { acquireWebGLSlot } from "./webgl-queue.js?v=9";
 
 /**
@@ -12,6 +12,7 @@ export class ShaderRenderer {
     this.hintEl = options.hintEl || null;
     this.onCompileResult = options.onCompileResult || null;
     this.silent = options.silent === true;
+    this.fixedSize = Number(options.fixedSize) > 0 ? Number(options.fixedSize) : 0;
     this.compileResultReported = false;
     this.gl = null;
     this.releaseSlot = null;
@@ -76,6 +77,15 @@ export class ShaderRenderer {
   }
 
   ensureCanvasSize() {
+    if (this.fixedSize > 0) {
+      const size = Math.max(2, Math.floor(this.fixedSize));
+      if (this.canvas.width !== size || this.canvas.height !== size) {
+        this.canvas.width = size;
+        this.canvas.height = size;
+      }
+      return { width: size, height: size };
+    }
+
     const rect = this.canvas.getBoundingClientRect();
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const w = Math.max(1, Math.floor(rect.width * dpr));
@@ -88,6 +98,7 @@ export class ShaderRenderer {
   }
 
   isLayoutReady() {
+    if (this.fixedSize > 0) return true;
     const rect = this.canvas.getBoundingClientRect();
     return rect.width >= 8 && rect.height >= 8;
   }

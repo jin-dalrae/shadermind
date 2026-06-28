@@ -99,6 +99,60 @@ function fixIntLoops(code) {
     );
 }
 
+function extractBalancedBlock(code, startIdx) {
+  const open = code.indexOf("{", startIdx);
+  if (open < 0) return null;
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === "{") depth += 1;
+    else if (code[i] === "}") {
+      depth -= 1;
+      if (depth === 0) return code.slice(startIdx, i + 1);
+    }
+  }
+  return null;
+}
+
+/** GLSL ES 1.0 requires helpers before use — AI often appends hsv2rgb after main(). */
+function hoistFunctionsBeforeMain(code) {
+  const sigRe = /\b(void|float|vec[234]|int|mat[234])\s+(\w+)\s*\([^)]*\)\s*\{/g;
+  const functions = [];
+  const seen = new Set();
+  let match;
+
+  while ((match = sigRe.exec(code)) !== null) {
+    const name = match[2];
+    if (seen.has(name)) continue;
+    const body = extractBalancedBlock(code, match.index);
+    if (!body) continue;
+    seen.add(name);
+    functions.push({ name, body, index: match.index });
+    sigRe.lastIndex = match.index + body.length;
+  }
+
+  const mainFn = functions.find((fn) => fn.name === "main");
+  if (!mainFn) return code;
+
+  const needsHoist = functions.some((fn) => fn.name !== "main" && fn.index > mainFn.index);
+  if (!needsHoist) return code;
+
+  let header = code;
+  for (const fn of [...functions].sort((a, b) => b.index - a.index)) {
+    header = header.slice(0, fn.index) + header.slice(fn.index + fn.body.length);
+  }
+
+  const helpers = functions
+    .filter((fn) => fn.name !== "main")
+    .sort((a, b) => a.index - b.index)
+    .map((fn) => fn.body);
+
+  return [header.trimEnd(), ...helpers, mainFn.body]
+    .filter(Boolean)
+    .join("\n\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 function fixInvalidSwizzles(code) {
   let patched = code.replace(/\.u\b/g, ".x").replace(/\.v\b/g, ".y");
 
@@ -134,5 +188,5 @@ export function patchGlslForWebGL(code) {
     }
   }
 
-  return patched;
+  return hoistFunctionsBeforeMain(patched);
 }

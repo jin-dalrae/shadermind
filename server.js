@@ -1292,7 +1292,7 @@ function isValidThumbnail(value) {
     && value.length <= MAX_THUMBNAIL_BYTES;
 }
 
-function applyThumbnailsToSketches(sketches, thumbnails, thumbnailVersion = 2) {
+function applyThumbnailsToSketches(sketches, thumbnails, thumbnailVersion = 3) {
   if (!thumbnails || !Array.isArray(sketches)) return;
   for (const sketch of sketches) {
     const thumb = thumbnails[sketch.id];
@@ -2065,7 +2065,7 @@ app.post("/api/sketches/thumbnail", async (req, res) => {
     return res.status(400).json({ error: "Invalid sketch id or thumbnail." });
   }
 
-  const version = Number(thumbnailVersion) || 2;
+  const version = Number(thumbnailVersion) || 3;
 
   try {
     const db = await loadDB();

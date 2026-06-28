@@ -4,7 +4,7 @@ export const THUMB_TIME = 1.25;
 export const THUMB_QUALITY = 0.88;
 
 /** Bump when capture format/size changes — triggers one-time gallery re-backfill. */
-export const THUMB_CAPTURE_VERSION = 2;
+export const THUMB_CAPTURE_VERSION = 3;
 
 /** Older 96px captures are tiny on disk; upgrade when detail view opens. */
 export const THUMB_LEGACY_MAX_CHARS = 32000;

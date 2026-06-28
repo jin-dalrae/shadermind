@@ -452,6 +452,16 @@ main {
   animation: thumb-shimmer 1.4s ease-in-out infinite;
 }
 
+.archive-thumb-empty::after {
+  content: "◌";
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  font-size: 1.4rem;
+  color: rgba(255, 255, 255, 0.18);
+}
+
 .archive-caption {
   padding: 10px 12px;
 }

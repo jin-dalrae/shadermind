@@ -1,5 +1,5 @@
-import { ShaderRenderer } from "./shader-renderer.js?v=13";
-import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=7";
+import { ShaderRenderer } from "./shader-renderer.js?v=15";
+import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=8";
 import { VoiceCurator } from "./voice-curator.js?v=1";
 import {
   THUMB_CAPTURE_SIZE,
@@ -8,7 +8,7 @@ import {
   THUMB_QUALITY,
   THUMB_TIME,
   galleryThumbMigrationKey
-} from "./thumbnail-config.js?v=2";
+} from "./thumbnail-config.js?v=3";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -166,6 +166,7 @@ class ShaderMindUI {
 
     this.poll();
     this.schedulePoll();
+    window.setTimeout(() => this.runGalleryThumbnailMigrationOnce(), 2500);
   }
 
   pageFromHash() {
@@ -281,10 +282,12 @@ class ShaderMindUI {
         img.alt = sketch.title || "";
         img.loading = "lazy";
         thumb.appendChild(img);
-      } else {
+      } else if (this.sketchNeedsThumbnail(sketch)) {
         thumb.classList.add("archive-thumb-pending");
         thumb.dataset.sketchId = sketch.id;
         this.observeThumbnailPending(thumb, sketch);
+      } else {
+        thumb.classList.add("archive-thumb-empty");
       }
 
       const score = this.ratingValue(sketch.rating);
@@ -479,9 +482,9 @@ class ShaderMindUI {
     if (sketchOrThumb && typeof sketchOrThumb === "object") {
       const thumb = sketchOrThumb.thumbnail;
       const version = Number(sketchOrThumb.thumbnailVersion) || 0;
-      return !thumb
-        || version < THUMB_CAPTURE_VERSION
-        || thumb.length < THUMB_LEGACY_MAX_CHARS;
+      if (!thumb) return true;
+      if (version >= THUMB_CAPTURE_VERSION) return false;
+      return thumb.length < THUMB_LEGACY_MAX_CHARS;
     }
     const thumb = sketchOrThumb;
     return !thumb || thumb.length < THUMB_LEGACY_MAX_CHARS;
@@ -1025,6 +1028,7 @@ class ShaderMindUI {
       this.thumbBackfillAttempted.add(sketch.id);
       this.galleryKey = null;
       this.refreshTimelineThumb(sketch.id, thumbnail);
+      this.refreshGalleryThumb(sketch.id, thumbnail);
       if (this.currentPage === "gallery") {
         this.renderGalleryGrid();
       }
@@ -1073,6 +1077,7 @@ class ShaderMindUI {
       const thumb = await this.captureSketchThumbnail(sketch);
       if (!thumb) {
         this.thumbBackfillAttempted.add(sketch.id);
+        this.markGalleryThumbFailed(sketch.id);
         continue;
       }
 
@@ -1083,6 +1088,27 @@ class ShaderMindUI {
     this.thumbBackfillBusy = false;
   }
 
+  markGalleryThumbFailed(sketchId) {
+    const cell = this.els.archiveGrid?.querySelector(`[data-id="${sketchId}"] .archive-thumb`);
+    if (!cell) return;
+    cell.classList.remove("archive-thumb-pending");
+    cell.classList.add("archive-thumb-empty");
+  }
+
+  refreshGalleryThumb(sketchId, thumbnail) {
+    const cell = this.els.archiveGrid?.querySelector(`[data-id="${sketchId}"] .archive-thumb`);
+    if (!cell || !thumbnail) return;
+    cell.classList.remove("archive-thumb-pending", "archive-thumb-empty");
+    let img = cell.querySelector("img");
+    if (!img) {
+      img = document.createElement("img");
+      img.loading = "lazy";
+      cell.appendChild(img);
+    }
+    img.src = thumbnail;
+    img.alt = "";
+  }
+
   async renderOffscreenThumbnail(sketch) {
     const canvas = document.createElement("canvas");
     canvas.width = THUMB_CAPTURE_SIZE;
@@ -1090,7 +1116,10 @@ class ShaderMindUI {
     canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_CAPTURE_SIZE}px;height:${THUMB_CAPTURE_SIZE}px;pointer-events:none;`;
     document.body.appendChild(canvas);
 
-    const renderer = new ShaderRenderer(canvas, { silent: true });
+    const renderer = new ShaderRenderer(canvas, {
+      silent: true,
+      fixedSize: THUMB_CAPTURE_SIZE
+    });
     try {
       const ok = await renderer.compile(sketch.glsl);
       if (!ok) return null;

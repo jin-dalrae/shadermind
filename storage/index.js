@@ -26,11 +26,14 @@ function paginateSketches(db, { page = 1, limit = 20, generation, rating } = {})
   if (rating) {
     const min = Number(rating);
     items = items.filter(s => {
+      if (rating === "4") {
+        return s.rating === "good" || (Number.isFinite(Number(s.rating)) && Number(s.rating) >= 4);
+      }
+      if (rating === "2") {
+        return s.rating === "bad" || (Number.isFinite(Number(s.rating)) && Number(s.rating) <= 2);
+      }
       const r = Number(s.rating);
-      if (!Number.isFinite(r)) return false;
-      if (rating === "4") return r >= 4;
-      if (rating === "2") return r <= 2;
-      return r === min;
+      return Number.isFinite(r) && r === min;
     });
   }
 

@@ -1,6 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { isLowEffortGlsl, validateGlsl } from "../lib/glsl.js";
+import { patchGlslForWebGL } from "../public/glsl-patch.js";
 
 const CIRCLE_SHADERS = [
   `precision mediump float;
@@ -107,4 +108,23 @@ void main() {
 }`;
   assert.equal(isLowEffortGlsl(ellipse), true);
   assert.equal(isLowEffortGlsl(ring), true);
+});
+
+test("patchGlslForWebGL hoists helpers defined after main()", () => {
+  const shader = `precision mediump float;
+uniform float u_time;
+uniform vec2 u_resolution;
+void main() {
+  gl_FragColor = vec4(hsv2rgb(0.5, 0.4, 0.7), 1.0);
+}
+vec3 hsv2rgb(float h, float s, float v) {
+  vec3 rgb = clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+  return v * mix(vec3(1.0), rgb, s);
+}`;
+  const patched = patchGlslForWebGL(shader);
+  const mainIdx = patched.indexOf("void main");
+  const hsvIdx = patched.indexOf("vec3 hsv2rgb");
+  assert.ok(hsvIdx >= 0 && mainIdx >= 0);
+  assert.ok(hsvIdx < mainIdx, "hsv2rgb should appear before main");
+  assert.equal(validateGlsl(patched).valid, true);
 });
