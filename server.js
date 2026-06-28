@@ -1654,7 +1654,18 @@ Summarize what happened and what you learned.`;
   }
 });
 
-app.listen(PORT, "0.0.0.0", async () => {
+const server = app.listen(PORT, "0.0.0.0", () => {
+  bootServer().catch((err) => {
+    console.error("Startup failed:", err);
+  });
+});
+
+server.on("error", (err) => {
+  console.error(`Server listen error (${PORT}):`, err.message);
+  process.exit(1);
+});
+
+async function bootServer() {
   console.log(`ShaderMind running on http://localhost:${PORT}`);
   if (process.env.DO_APP_ID) {
     console.log(`Deploy: DigitalOcean App Platform (app ${process.env.DO_APP_ID})`);
@@ -1686,22 +1697,27 @@ app.listen(PORT, "0.0.0.0", async () => {
   console.log(`Loop: autopilot delay=${AUTOPILOT_INTERVAL_MS}ms, evolution async=${EVOLUTION_ASYNC}`);
   console.log(`Learning: mode=${LEARNING_MODE}, code-aware=${CODE_AWARE_LEARNING}, consolidate every ${CONSOLIDATION_EVERY_N} gens`);
 
-  if (AUTOPILOT_ENABLED) {
-    const db = await loadDB();
-    if (db.lastHumanOpinion) {
-      autopilot.lastHumanOpinion = db.lastHumanOpinion;
-    }
-    const target = Math.max(0, AUTOPILOT_SEED_CYCLES - db.generationCount);
-    if (await restorePendingStudio(db)) {
-      autopilot.running = true;
-      autopilot.loopPromise = resumePendingAutopilotCycle();
-      console.log(`Restored studio batch for Gen #${autopilot.currentGeneration} (${autopilot.currentBatch.length} shaders)`);
-    } else {
-      console.log(`Starting autonomous autopilot (continuous, seed target: ${AUTOPILOT_SEED_CYCLES} gens)...`);
-      startAutopilot(Infinity);
-      if (target > 0) {
-        console.log(`Will autonomously seed ${target} generation(s) before demo-ready state.`);
-      }
+  if (!AUTOPILOT_ENABLED) return;
+
+  const db = await loadDB();
+  if (db.lastHumanOpinion) {
+    autopilot.lastHumanOpinion = db.lastHumanOpinion;
+  }
+  const target = Math.max(0, AUTOPILOT_SEED_CYCLES - db.generationCount);
+  if (await restorePendingStudio(db)) {
+    autopilot.running = true;
+    autopilot.loopPromise = resumePendingAutopilotCycle().catch((err) => {
+      console.error("[Autopilot] Resume failed:", err.message);
+      autopilot.phase = "error";
+      autopilot.lastError = err.message;
+      autopilot.running = false;
+    });
+    console.log(`Restored studio batch for Gen #${autopilot.currentGeneration} (${autopilot.currentBatch.length} shaders)`);
+  } else {
+    console.log(`Starting autonomous autopilot (continuous, seed target: ${AUTOPILOT_SEED_CYCLES} gens)...`);
+    startAutopilot(Infinity);
+    if (target > 0) {
+      console.log(`Will autonomously seed ${target} generation(s) before demo-ready state.`);
     }
   }
-});
+}

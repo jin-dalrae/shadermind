@@ -3,7 +3,12 @@ import { fileURLToPath } from "url";
 import { DEFAULT_DB, mergeWithDefaults } from "./default-db.js";
 import { JsonStorage } from "./json-storage.js";
 import { MongoStorage } from "./mongo-storage.js";
-import { createSqliteStorage } from "./sqlite.js";
+
+/** Only load when SQLite is enabled — avoids Node 20 crash on `node:sqlite` at boot. */
+let createSqliteStorage = null;
+if (process.env.USE_SQLITE === "true" || process.env.SQLITE_PATH) {
+  ({ createSqliteStorage } = await import("./sqlite.js"));
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const rootDir = path.join(__dirname, "..");
@@ -76,6 +81,11 @@ function createJsonStorageInstance() {
 }
 
 function createSqliteStorageInstance() {
+  if (!createSqliteStorage) {
+    throw new Error(
+      "SQLite storage requires Node 22+ and USE_SQLITE=true (built-in node:sqlite)."
+    );
+  }
   const jsonPath = process.env.DB_PATH || path.join(rootDir, "database.json");
   const sqlitePath = process.env.SQLITE_PATH || path.join(rootDir, "shadermind.db");
   const sqlite = createSqliteStorage({
