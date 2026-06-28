@@ -1590,6 +1590,16 @@ async function buildAutopilotStatus() {
     return status;
   }
 
+  if (autopilot.phase === "awaiting_human") {
+    autopilot.phase = autopilot.running ? "waiting" : "idle";
+    autopilot.currentBatch = null;
+    autopilot.currentGeneration = null;
+    status.phase = autopilot.phase;
+    status.awaitingHuman = false;
+    status.currentBatch = null;
+    status.currentGeneration = null;
+  }
+
   if (autopilot.phase === "generating") {
     return status;
   }
