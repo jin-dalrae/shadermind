@@ -823,6 +823,66 @@ function normalizeCompileResult(result) {
   };
 }
 
+function recomputeLearningStats(db) {
+  const ratedSketches = db.sketches.filter(s => s.rated && ratingValue(s.rating) !== null);
+  const highRated = ratedSketches.filter(s => ratingValue(s.rating) >= 4);
+  db.successRate = ratedSketches.length > 0
+    ? parseFloat(((highRated.length / ratedSketches.length) * 100).toFixed(1))
+    : 0;
+
+  const tagCounts = {};
+  highRated.forEach(s => {
+    normalizeDna(s.dna).forEach(tag => {
+      tagCounts[tag] = (tagCounts[tag] || 0) + 1;
+    });
+  });
+  db.statistics.popularTags = Object.entries(tagCounts)
+    .map(([tag, count]) => ({ tag, count }))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 10);
+
+  db.preferenceMemory = buildPreferenceMemory(
+    db.sketches,
+    db.preferenceMemory || EMPTY_PREFERENCE_MEMORY
+  );
+
+  const byGeneration = new Map();
+  for (const sketch of ratedSketches) {
+    const gen = Number(sketch.generation) || 0;
+    if (!byGeneration.has(gen)) {
+      byGeneration.set(gen, { ratingCounts: { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0 }, ratingTotal: 0, ratedCount: 0 });
+    }
+    const bucket = byGeneration.get(gen);
+    const rating = ratingValue(sketch.rating);
+    bucket.ratingCounts[rating] += 1;
+    bucket.ratingTotal += rating;
+    bucket.ratedCount += 1;
+  }
+
+  for (const [generation, bucket] of byGeneration.entries()) {
+    const highRatedCount = bucket.ratingCounts[4] + bucket.ratingCounts[5];
+    const lowRatedCount = bucket.ratingCounts[1] + bucket.ratingCounts[2];
+    const entry = {
+      generation,
+      ratingCounts: bucket.ratingCounts,
+      averageRating: parseFloat((bucket.ratingTotal / bucket.ratedCount).toFixed(2)),
+      highRatedCount,
+      lowRatedCount,
+      neutralCount: bucket.ratingCounts[3],
+      goodCount: highRatedCount,
+      badCount: lowRatedCount,
+      successRate: parseFloat(((highRatedCount / bucket.ratedCount) * 100).toFixed(1)),
+      timestamp: new Date().toISOString()
+    };
+    const idx = (db.statistics.generations || []).findIndex(g => g.generation === generation);
+    if (idx >= 0) {
+      db.statistics.generations[idx] = { ...db.statistics.generations[idx], ...entry };
+    } else {
+      db.statistics.generations.push(entry);
+    }
+  }
+}
+
 async function critiqueRatedSketches(db, generation) {
   const sketches = db.sketches.filter(s => s.generation === generation && s.rated);
   if (!sketches.length) return;
@@ -1598,6 +1658,40 @@ app.post("/api/sketches/:id/compile-result", (req, res) => {
   if (sketch) sketch.compile = compile;
 
   res.status(202).json({ success: true });
+});
+
+app.patch("/api/sketches/:id/rating", async (req, res) => {
+  const rating = ratingValue(req.body?.rating);
+  if (rating === null) {
+    return res.status(400).json({ error: "Rating must be an integer from 1 to 5." });
+  }
+
+  try {
+    const db = await loadDB();
+    const sketch = db.sketches.find(s => s.id === req.params.id);
+    if (!sketch) {
+      return res.status(404).json({ error: "Sketch not found." });
+    }
+
+    sketch.rated = true;
+    sketch.rating = rating;
+    sketch.ratingSource = "explicit";
+    sketch.codeFeatures ||= extractCodeFeatures(sketch.glsl);
+
+    recomputeLearningStats(db);
+    await saveDB(db);
+
+    res.json({
+      success: true,
+      id: sketch.id,
+      generation: sketch.generation,
+      rating,
+      successRate: db.successRate,
+      preferenceMemory: db.preferenceMemory
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.post("/api/sketches/thumbnail", async (req, res) => {

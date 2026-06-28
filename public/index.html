@@ -82,7 +82,7 @@
         <div class="gallery-page-head">
           <div>
             <h2 class="page-title">Gallery</h2>
-            <p class="page-sub">Saved sketches and strategy milestones across generations.</p>
+            <p class="page-sub" id="gallerySub">Saved sketches and strategy milestones across generations.</p>
           </div>
           <div class="gallery-filters">
             <label class="filter-field">
@@ -212,6 +212,11 @@
           <p class="dialog-compile-error" id="dialogError" hidden></p>
         </section>
         <aside class="dialog-meta">
+          <div class="dialog-rerate" id="dialogRerate" hidden>
+            <p class="dialog-rerate-label">Your rating</p>
+            <div class="rate-actions dialog-rate-actions" id="dialogRateActions"></div>
+            <p class="dialog-rerate-hint" id="dialogRerateHint">Changes save immediately and update learned taste.</p>
+          </div>
           <p class="dialog-hypothesis" id="dialogHypothesis"></p>
           <p class="dialog-statement" id="dialogStatement" hidden></p>
           <details class="dialog-source-details" open>
@@ -223,6 +228,6 @@
     </div>
   </dialog>
 
-  <script type="module" src="app.js?v=22"></script>
+  <script type="module" src="app.js?v=23"></script>
 </body>
 </html>

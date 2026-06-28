@@ -84,6 +84,7 @@ class ShaderMindUI {
       galleryPrev: document.getElementById("galleryPrev"),
       galleryNext: document.getElementById("galleryNext"),
       galleryPageInfo: document.getElementById("galleryPageInfo"),
+      gallerySub: document.getElementById("gallerySub"),
       galleryFilterGen: document.getElementById("galleryFilterGen"),
       galleryFilterRating: document.getElementById("galleryFilterRating"),
       reflectionText: document.getElementById("reflectionText"),
@@ -110,6 +111,9 @@ class ShaderMindUI {
       dialogEyebrow: document.getElementById("dialogEyebrow"),
       dialogTitle: document.getElementById("dialogTitle"),
       dialogRating: document.getElementById("dialogRating"),
+      dialogRerate: document.getElementById("dialogRerate"),
+      dialogRateActions: document.getElementById("dialogRateActions"),
+      dialogRerateHint: document.getElementById("dialogRerateHint"),
       dialogHypothesis: document.getElementById("dialogHypothesis"),
       dialogStatement: document.getElementById("dialogStatement"),
 
@@ -133,6 +137,7 @@ class ShaderMindUI {
     this.els.galleryFilterGen.addEventListener("change", () => {
       this.galleryPage = 1;
       this.galleryKey = null;
+      this.updateGallerySubcopy();
       this.loadGalleryPage();
     });
     this.els.galleryFilterRating.addEventListener("change", () => {
@@ -200,6 +205,7 @@ class ShaderMindUI {
     }
 
     if (page === "gallery") {
+      this.updateGallerySubcopy();
       this.loadGalleryPage();
       if (this.lastState) this.updateTimeline(this.lastState);
     }
@@ -208,9 +214,10 @@ class ShaderMindUI {
   galleryQueryParams() {
     const gen = this.els.galleryFilterGen.value;
     const rating = this.els.galleryFilterRating.value;
+    const limit = gen ? 50 : this.galleryLimit;
     const params = new URLSearchParams({
       page: String(this.galleryPage),
-      limit: String(this.galleryLimit)
+      limit: String(limit)
     });
     if (gen) params.set("generation", gen);
     if (rating) params.set("rating", rating);
@@ -272,21 +279,24 @@ class ShaderMindUI {
       }
 
       const score = this.ratingValue(sketch.rating);
+      if (score) cell.classList.add(`rating-${score}`);
+
       const caption = document.createElement("div");
       caption.className = "archive-caption";
       caption.innerHTML = `
         <h4>${this.esc(sketch.title || "Untitled")}</h4>
         <div class="archive-meta">
           <span>Gen ${sketch.generation}</span>
-          <span>${score ? `${score}/5` : "—"}</span>
+          <span class="archive-score">${score ? `${score}/5` : "—"}</span>
         </div>
       `;
 
       cell.appendChild(thumb);
       cell.appendChild(caption);
+      cell.appendChild(this.buildRateActions(sketch, (id, r) => this.updateSketchRating(id, r)));
       cell.addEventListener("click", (e) => {
         if (e.target.closest(".btn-rate")) return;
-        this.openDialog(sketch, window.scrollY);
+        this.openDialog(sketch, window.scrollY, { allowRerate: true });
       });
       this.els.archiveGrid.appendChild(cell);
     });
@@ -306,6 +316,117 @@ class ShaderMindUI {
     }
     select.innerHTML = options.join("");
     if (current && Number(current) <= gen) select.value = current;
+    this.updateGallerySubcopy();
+  }
+
+  updateGallerySubcopy() {
+    if (!this.els.gallerySub) return;
+    const gen = this.els.galleryFilterGen.value;
+    this.els.gallerySub.textContent = gen
+      ? `Generation ${gen} — click a sketch to review, or change 1–5 ratings inline.`
+      : "Saved sketches and strategy milestones across generations. Filter by generation to re-rate a past batch.";
+  }
+
+  buildRateActions(sketch, onRate) {
+    const actions = document.createElement("div");
+    actions.className = "rate-actions";
+    const current = this.ratingValue(sketch.rating);
+
+    [1, 2, 3, 4, 5].forEach(score => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = `btn-rate rate-${score}${current === score ? " is-selected" : ""}`;
+      button.textContent = score;
+      button.title = this.ratingLabel(score);
+      button.setAttribute("aria-label", `${score} out of 5 — ${this.ratingLabel(score)}`);
+      button.addEventListener("click", (e) => {
+        e.stopPropagation();
+        onRate(sketch.id, score);
+      });
+      actions.appendChild(button);
+    });
+
+    return actions;
+  }
+
+  patchSketchRating(sketchId, rating) {
+    const patch = { rated: true, rating, ratingSource: "explicit" };
+    const apply = (list) => {
+      if (!Array.isArray(list)) return;
+      const item = list.find(s => s.id === sketchId);
+      if (item) Object.assign(item, patch);
+    };
+    apply(this.sketches);
+    apply(this.galleryItems);
+    apply(this.activeBatch);
+  }
+
+  applyRatingUi(sketchId, rating) {
+    for (const root of [this.els.shaderGrid, this.els.archiveGrid]) {
+      if (!root) continue;
+      const cell = root.querySelector(`[data-id="${sketchId}"]`);
+      if (!cell) continue;
+
+      cell.classList.remove("rating-1", "rating-2", "rating-3", "rating-4", "rating-5");
+      cell.classList.add(`rating-${rating}`);
+
+      cell.querySelectorAll(".btn-rate").forEach(btn => {
+        btn.classList.toggle("is-selected", btn.classList.contains(`rate-${rating}`));
+      });
+
+      const scoreEl = cell.querySelector(".archive-score");
+      if (scoreEl) scoreEl.textContent = `${rating}/5`;
+    }
+
+    if (this.dialogSketchId === sketchId) {
+      this.els.dialogRating.hidden = false;
+      this.els.dialogRating.textContent = `${rating} / 5`;
+      this.els.dialogRateActions?.querySelectorAll(".btn-rate").forEach(btn => {
+        btn.classList.toggle("is-selected", btn.classList.contains(`rate-${rating}`));
+      });
+    }
+  }
+
+  async updateSketchRating(sketchId, rating) {
+    try {
+      const res = await fetch(`/api/sketches/${encodeURIComponent(sketchId)}/rating`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Could not update rating");
+
+      this.patchSketchRating(sketchId, rating);
+      this.applyRatingUi(sketchId, rating);
+
+      if (this.userRatings[sketchId] !== undefined) {
+        this.userRatings[sketchId] = rating;
+        this.updateSubmitState();
+      }
+
+      if (this.lastState) {
+        this.lastState.successRate = data.successRate;
+        this.lastState.preferenceMemory = data.preferenceMemory;
+        this.updateHeader(this.lastState, this.lastAutopilot || {});
+        if (this.currentPage === "settings") {
+          this.updateSettings(this.lastState, this.lastAutopilot || {});
+        }
+      }
+
+      const sketch = this.sketches.find(s => s.id === sketchId)
+        || this.galleryItems.find(s => s.id === sketchId);
+      if (sketch && rating >= 4 && !sketch.thumbnail) {
+        this.thumbBackfillAttempted.delete(sketchId);
+        this.queueThumbnailBackfill(sketch);
+      }
+
+      if (this.els.dialogRerateHint) {
+        this.els.dialogRerateHint.textContent = `Saved · ${rating}/5`;
+      }
+    } catch (err) {
+      alert(`Rating error: ${err.message}`);
+    }
   }
 
   async autopilotAction(action) {
@@ -746,18 +867,7 @@ class ShaderMindUI {
       }, 250);
     }
 
-    const cell = this.els.shaderGrid.querySelector(`[data-id="${sketchId}"]`);
-    if (!cell) return;
-
-    cell.classList.remove("rating-1", "rating-2", "rating-3", "rating-4", "rating-5");
-    cell.classList.add(`rating-${rating}`);
-
-    cell.querySelectorAll(".btn-rate").forEach(btn => {
-      btn.classList.remove("is-selected");
-    });
-    const selected = cell.querySelector(`.btn-rate.rate-${rating}`);
-    if (selected) selected.classList.add("is-selected");
-
+    this.applyRatingUi(sketchId, rating);
     this.updateSubmitState();
   }
 
@@ -1215,7 +1325,25 @@ class ShaderMindUI {
     });
   }
 
-  async openDialog(sketch, scrollY = null) {
+  mountDialogRerate(sketch, allowRerate) {
+    if (!this.els.dialogRerate || !this.els.dialogRateActions) return;
+    const show = Boolean(allowRerate && sketch?.id);
+    this.els.dialogRerate.hidden = !show;
+    if (!show) {
+      this.els.dialogRateActions.innerHTML = "";
+      return;
+    }
+
+    this.els.dialogRateActions.innerHTML = "";
+    this.els.dialogRateActions.appendChild(
+      this.buildRateActions(sketch, (id, r) => this.updateSketchRating(id, r))
+    );
+    if (this.els.dialogRerateHint) {
+      this.els.dialogRerateHint.textContent = "Changes save immediately and update learned taste.";
+    }
+  }
+
+  async openDialog(sketch, scrollY = null, { allowRerate = false } = {}) {
     const openScrollY = scrollY ?? window.scrollY ?? document.documentElement.scrollTop ?? 0;
 
     const resolved = this.resolveSketch(sketch);
@@ -1249,6 +1377,7 @@ class ShaderMindUI {
       this.els.dialogStatement.hidden = true;
     }
     this.els.dialogCode.textContent = resolved.glsl || "";
+    this.mountDialogRerate(resolved, allowRerate || this.currentPage === "gallery");
 
     this.els.dialogError.hidden = true;
     this.els.dialogError.textContent = "";

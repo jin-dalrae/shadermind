@@ -477,6 +477,58 @@ main {
   color: var(--muted);
 }
 
+.archive-cell .rate-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 10px 10px;
+  flex-wrap: wrap;
+}
+
+.archive-cell .btn-rate {
+  flex: 1;
+  min-width: 0;
+  padding: 4px 0;
+  font-size: 10px;
+}
+
+.archive-cell.rating-1 { border-color: #ad6868; }
+.archive-cell.rating-2 { border-color: #b4845b; }
+.archive-cell.rating-3 { border-color: #888; }
+.archive-cell.rating-4 { border-color: #68aa9b; }
+.archive-cell.rating-5 { border-color: #6bc49a; }
+
+.dialog-rerate {
+  margin-bottom: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.dialog-rerate-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.dialog-rerate-hint {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.dialog-rate-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.dialog-rate-actions .btn-rate {
+  flex: 1;
+  padding: 8px 0;
+}
+
 .gallery-empty {
   text-align: center;
   padding: 48px 20px;
