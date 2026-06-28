@@ -118,6 +118,28 @@ function buildGlslRepairHint(reason) {
   return ` [Fix: ${reason}]`;
 }
 
+const STRATEGY_PROMPT_MAX = 500;
+const STRATEGY_STORE_MAX = 700;
+
+const DNA_PROMPT_RULE = `dna: 2-4 tags. Each tag is ONE or TWO lowercase words for concrete math/color only (sin, fbm, polar, smoothstep, amber, ripple). No strategy jargon, no sentences, no hashtags.`;
+
+function strategyForPrompt(strategy) {
+  return String(strategy || "").trim().slice(0, STRATEGY_PROMPT_MAX);
+}
+
+function compactStrategy(text) {
+  const t = String(text || "").trim().replace(/\s+/g, " ");
+  if (t.length <= STRATEGY_STORE_MAX) return t;
+  return `${t.slice(0, STRATEGY_STORE_MAX).replace(/\s+\S*$/, "")}...`;
+}
+
+function sanitizeHeuristics(items) {
+  return (Array.isArray(items) ? items : [])
+    .map(h => String(h).trim().replace(/\s*→\s*\d+%.*$/i, "").slice(0, 100))
+    .filter(Boolean)
+    .slice(0, 4);
+}
+
 function sketchTypeForIndex(index, size = BATCH_SIZE) {
   const { evolutionary, directive } = getBatchDistribution(size);
   if (index < evolutionary) return "evolutionary";
@@ -297,7 +319,7 @@ Return a JSON array of exactly ${BATCH_SIZE} objects. Each object MUST have:
 - "title": 2–4 word label (e.g. "Ripple Noise Field") — not poetic
 - "type": "evolutionary" | "directive" | "mutation"
 - "hypothesis": one factual line, max 15 words — what the shader computes (techniques, motion, palette). No metaphor.
-- "dna": array of 3-5 math/visual tags
+- "dna": ${DNA_PROMPT_RULE}
 - "glsl": full shader source as a JSON string (use \\n for newlines — NOT base64, NOT markdown fences)
 - "poetic_statement": "" (always empty — curator judges by rendering)
 
@@ -417,12 +439,12 @@ Change one thing from prior high-rated work when evolutionary — small steps, n
 Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, dna.
 title: 2–4 word label, not poetic. hypothesis: one factual line (max 15 words) — what the code will do. No metaphor.
 Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis names ONE tweak to remix from a good parent), ${evolutionary}-${evolutionary + directive - 1} "directive", ${evolutionary + directive}-${BATCH_SIZE - 1} "mutation".
-Strategy: ${db.currentStrategy}
-Heuristics: ${(db.heuristics || []).join("; ")}
+Strategy: ${strategyForPrompt(db.currentStrategy)}
+Heuristics: ${(db.heuristics || []).slice(0, 4).join("; ")}
 ${remixSection}
 ${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${MATH_COOKBOOK}
 Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
-Output raw JSON array only. DNA tags should name specific math from the cookbook.`;
+Output raw JSON array only. ${DNA_PROMPT_RULE}`;
 
   const userPrompt = `Generation #${genNum}. Focus: "${userFocus}". Plan ${BATCH_SIZE} fast, distinctive shader concepts — mostly small daily modifications.`;
   const rawResponse = await runInferenceBatch(systemPrompt, userPrompt, true, `metadata plan gen ${genNum}`);
@@ -511,7 +533,7 @@ Rules:
 FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
 REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, or mouse-reactive flow.
 ${MATH_COOKBOOK}
-Strategy: ${db.currentStrategy}${rollupHint}
+Strategy: ${strategyForPrompt(db.currentStrategy)}${rollupHint}
 ${preferenceSummary}`;
     basePrompt = `Generation #${genNum}, shader #${index + 1}.
 Title: ${meta.title}
@@ -868,25 +890,24 @@ function stringList(value) {
 async function evolveStrategyInternal(db, generation, ratingSummary, userOpinion) {
   const prevStrategy = db.currentStrategy;
 
-  const evolutionSystemPrompt = `You are "ShaderMind", a self-reflecting generative artist agent.
-Your task is to analyze feedback from your last generation of sketches, evaluate your strategy, extract updated mathematical heuristics, and output an evolved strategy guidelines document.
+  const evolutionSystemPrompt = `You are ShaderMind updating generation rules after a rated batch.
 
-Analyze the full 1–5 rating distribution. A score of 3 is neutral evidence, while 4–5 indicates preference and 1–2 indicates rejection. Synthesize curator opinions.
-Rewrite your "Shader Generation Strategy" to align with demonstrated taste while maintaining artistic integrity.
+Analyze the 1–5 ratings. Replace — do not expand — the previous strategy with short, concrete GLSL guidance.
+Forbidden: poetry, "systemic cognition", emergence jargon, approval percentages, multi-paragraph essays.
 
-Your response MUST be a valid JSON object. Do not write markdown blocks:
+Respond with JSON only:
 {
-  "analysis": "1–3 short factual sentences: what you tried, what the ratings showed, what to try next. No metaphor or poetry.",
+  "analysis": "1–3 short factual sentences. What worked, what failed, what to try next.",
   "heuristics": [
-    "specific mathematical or visual rule supported by the supplied evidence",
-    "second concise rule",
-    "third concise rule"
+    "max 12 words: concrete math/visual rule",
+    "second rule",
+    "third rule"
   ],
-  "evolvedStrategy": "string containing the full updated prompt/strategy rules for writing next GLSL fragment shaders"
+  "evolvedStrategy": "max 120 words. Plain bullet rules for next shaders: motion, palette, techniques. No metaphor."
 }`;
 
   const evolutionUserPrompt = `Previous Strategy:
-${prevStrategy}
+${strategyForPrompt(prevStrategy)}
 
 Last Generation (#${generation}) Performance:
 - Rating counts: ${JSON.stringify(ratingSummary.ratingCounts)}
@@ -913,12 +934,12 @@ Use the evidence counts above rather than inventing approval rates. Then output 
     });
     const parsedEvo = parseJsonFromModel(rawResponse);
 
-    db.currentStrategy = parsedEvo.evolvedStrategy || db.currentStrategy;
-    db.heuristics = parsedEvo.heuristics || db.heuristics || [];
+    db.currentStrategy = compactStrategy(parsedEvo.evolvedStrategy || db.currentStrategy);
+    db.heuristics = sanitizeHeuristics(parsedEvo.heuristics) || db.heuristics || [];
     db.strategyTimeline.push({
       generation,
       timestamp: new Date().toISOString(),
-      strategy: parsedEvo.evolvedStrategy || db.currentStrategy,
+      strategy: db.currentStrategy,
       notes: parsedEvo.analysis,
       curatorSource: db._pendingCuratorSource || "human"
     });

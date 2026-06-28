@@ -112,7 +112,7 @@ class ShaderMindUI {
       dialogRating: document.getElementById("dialogRating"),
       dialogHypothesis: document.getElementById("dialogHypothesis"),
       dialogStatement: document.getElementById("dialogStatement"),
-      dialogTags: document.getElementById("dialogTags"),
+
       dialogCode: document.getElementById("dialogCode")
     };
 
@@ -1229,7 +1229,6 @@ class ShaderMindUI {
     }
 
     this.dialogSketchId = resolved.id;
-    const dna = Array.isArray(resolved.dna) ? resolved.dna : [];
     const score = this.ratingValue(resolved.rating);
 
     this.els.dialogEyebrow.textContent = `Gen ${resolved.generation} · ${resolved.type || "sketch"}`;
@@ -1249,7 +1248,6 @@ class ShaderMindUI {
       this.els.dialogStatement.textContent = "";
       this.els.dialogStatement.hidden = true;
     }
-    this.els.dialogTags.innerHTML = dna.map(t => `<span>#${this.esc(t)}</span>`).join("");
     this.els.dialogCode.textContent = resolved.glsl || "";
 
     this.els.dialogError.hidden = true;
