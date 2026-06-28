@@ -3,10 +3,12 @@ import { getSharedGridRenderer } from "./shared-grid-renderer.js?v=7";
 import { VoiceCurator } from "./voice-curator.js?v=1";
 import {
   THUMB_CAPTURE_SIZE,
+  THUMB_CAPTURE_VERSION,
   THUMB_LEGACY_MAX_CHARS,
   THUMB_QUALITY,
-  THUMB_TIME
-} from "./thumbnail-config.js?v=1";
+  THUMB_TIME,
+  galleryThumbMigrationKey
+} from "./thumbnail-config.js?v=2";
 
 const PHASE_LABELS = {
   idle: "ready",
@@ -38,6 +40,7 @@ class ShaderMindUI {
     this.thumbBackfillAttempted = new Set();
     this.thumbBackfillSeedKey = null;
     this.thumbObserver = null;
+    this.thumbMigrationWatch = null;
     this.timelineKey = null;
     this.pollTimer = null;
     this.pollIntervalMs = 3000;
@@ -211,7 +214,7 @@ class ShaderMindUI {
 
     if (page === "gallery") {
       this.updateGallerySubcopy();
-      this.loadGalleryPage();
+      this.loadGalleryPage().then(() => this.runGalleryThumbnailMigrationOnce());
       if (this.lastState) this.updateTimeline(this.lastState);
     }
   }
@@ -472,8 +475,16 @@ class ShaderMindUI {
     return `${state.generationCount}:${(state.strategyTimeline || []).length}:${good.length}:${withThumb}`;
   }
 
-  thumbnailNeedsUpgrade(thumbnail) {
-    return !thumbnail || thumbnail.length < THUMB_LEGACY_MAX_CHARS;
+  thumbnailNeedsUpgrade(sketchOrThumb) {
+    if (sketchOrThumb && typeof sketchOrThumb === "object") {
+      const thumb = sketchOrThumb.thumbnail;
+      const version = Number(sketchOrThumb.thumbnailVersion) || 0;
+      return !thumb
+        || version < THUMB_CAPTURE_VERSION
+        || thumb.length < THUMB_LEGACY_MAX_CHARS;
+    }
+    const thumb = sketchOrThumb;
+    return !thumb || thumb.length < THUMB_LEGACY_MAX_CHARS;
   }
 
   sketchNeedsThumbnail(sketch) {
@@ -481,7 +492,69 @@ class ShaderMindUI {
     if (this.ratingValue(sketch.rating) < 4) return false;
     if (this.thumbBackfillAttempted.has(sketch.id)) return false;
     if (sketch.compile?.success === false) return false;
-    return this.thumbnailNeedsUpgrade(sketch.thumbnail);
+    return this.thumbnailNeedsUpgrade(sketch);
+  }
+
+  async fetchAllHighRatedSketches() {
+    const items = [];
+    let page = 1;
+    let pages = 1;
+    while (page <= pages) {
+      const res = await fetch(`/api/sketches?rating=4&limit=50&page=${page}`);
+      if (!res.ok) break;
+      const data = await res.json();
+      pages = data.pages || 1;
+      items.push(...(data.items || []));
+      page += 1;
+    }
+    return items;
+  }
+
+  watchGalleryThumbMigrationComplete() {
+    if (this.thumbMigrationWatch) return;
+    const key = galleryThumbMigrationKey();
+
+    const tick = () => {
+      if (this.thumbBackfillBusy || this.thumbBackfillQueue.length > 0) {
+        this.thumbMigrationWatch = window.setTimeout(tick, 600);
+        return;
+      }
+      localStorage.setItem(key, "done");
+      this.thumbMigrationWatch = null;
+      this.galleryKey = null;
+      if (this.currentPage === "gallery") {
+        this.loadGalleryPage();
+        if (this.lastState) this.updateTimeline(this.lastState);
+      }
+    };
+
+    this.thumbMigrationWatch = window.setTimeout(tick, 600);
+  }
+
+  async runGalleryThumbnailMigrationOnce() {
+    const key = galleryThumbMigrationKey();
+    if (localStorage.getItem(key) === "done") return;
+
+    const sketches = await this.fetchAllHighRatedSketches();
+    const needsUpgrade = sketches.filter(s => this.sketchNeedsThumbnail(s));
+    if (!needsUpgrade.length) {
+      localStorage.setItem(key, "done");
+      return;
+    }
+
+    this.thumbBackfillAttempted.clear();
+    this.galleryKey = null;
+
+    for (const sketch of needsUpgrade) {
+      const local = this.sketches.find(s => s.id === sketch.id);
+      if (local) {
+        local.thumbnail = sketch.thumbnail;
+        local.thumbnailVersion = sketch.thumbnailVersion;
+      }
+      this.queueThumbnailBackfill(sketch);
+    }
+
+    this.watchGalleryThumbMigrationComplete();
   }
 
   ensureThumbObserver() {
@@ -941,11 +1014,20 @@ class ShaderMindUI {
       const res = await fetch("/api/sketches/thumbnail", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id: sketch.id, thumbnail })
+        body: JSON.stringify({
+          id: sketch.id,
+          thumbnail,
+          thumbnailVersion: THUMB_CAPTURE_VERSION
+        })
       });
       if (!res.ok) return false;
+      sketch.thumbnailVersion = THUMB_CAPTURE_VERSION;
       this.thumbBackfillAttempted.add(sketch.id);
+      this.galleryKey = null;
       this.refreshTimelineThumb(sketch.id, thumbnail);
+      if (this.currentPage === "gallery") {
+        this.renderGalleryGrid();
+      }
       if (this.dialogSketchId === sketch.id && this.els.dialogPoster) {
         this.showDialogPoster(thumbnail);
       }
@@ -961,7 +1043,7 @@ class ShaderMindUI {
     for (const sketch of batch) {
       if (this.ratingValue(ratings[sketch.id]) < 4) continue;
       let thumb = sketch.thumbnail || null;
-      if (this.thumbnailNeedsUpgrade(thumb)) {
+      if (this.thumbnailNeedsUpgrade(sketch)) {
         thumb = await this.captureSketchThumbnail(sketch);
         if (thumb) sketch.thumbnail = thumb;
       }
@@ -1514,7 +1596,7 @@ class ShaderMindUI {
         if (result.success) {
           this.els.dialogCanvas.style.opacity = "1";
           this.hideDialogPoster();
-          if (this.sketchNeedsThumbnail(resolved) || this.thumbnailNeedsUpgrade(resolved.thumbnail)) {
+          if (this.sketchNeedsThumbnail(resolved) || this.thumbnailNeedsUpgrade(resolved)) {
             const thumb = this.captureDialogThumbnail();
             if (thumb) {
               resolved.thumbnail = thumb;

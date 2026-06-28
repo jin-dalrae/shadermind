@@ -15,6 +15,7 @@ export function normalizeSketchDoc(doc) {
     rating: doc.rating ?? null,
     dna: doc.dna ?? [],
     thumbnail: doc.thumbnail ?? null,
+    thumbnailVersion: doc.thumbnailVersion ?? 0,
     curatorSource: doc.curatorSource ?? null,
     ratingSource: doc.ratingSource ?? null,
     generationFocus: doc.generationFocus ?? null,

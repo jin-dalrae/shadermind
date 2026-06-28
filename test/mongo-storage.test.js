@@ -28,7 +28,8 @@ test("normalizeSketchDoc restores continual-learning sketch fields", () => {
       preferenceMemoryVersion: 2
     },
     learningUseCount: 1,
-    patternIds: ["fbm-layers"]
+    patternIds: ["fbm-layers"],
+    thumbnailVersion: 2
   });
 
   assert.equal(sketch.id, "sketch-gen3-1");
@@ -39,7 +40,17 @@ test("normalizeSketchDoc restores continual-learning sketch fields", () => {
   assert.deepEqual(sketch.learningContext.exampleIds, ["sketch-gen2-1"]);
   assert.equal(sketch.learningUseCount, 1);
   assert.deepEqual(sketch.patternIds, ["fbm-layers"]);
+  assert.equal(sketch.thumbnailVersion, 2);
   assert.equal(sketch._id, undefined);
+});
+
+test("normalizeSketchDoc restores thumbnailVersion", () => {
+  const sketch = normalizeSketchDoc({
+    id: "sketch-gen2-1",
+    thumbnail: "data:image/jpeg;base64,abc",
+    thumbnailVersion: 2
+  });
+  assert.equal(sketch.thumbnailVersion, 2);
 });
 
 test("sketchFieldsForMongo omits Mongo _id and keeps learning payload", () => {

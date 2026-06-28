@@ -27,6 +27,7 @@ import {
   buildCurriculumPrompt,
   getCurriculumSummary
 } from "./lib/learnopengl.js";
+import { buildShaderTutorialPrompt, getShaderTutorialSummary } from "./lib/shader-tutorial.js";
 import {
   EMPTY_PREFERENCE_MEMORY,
   buildCritiqueSummary,
@@ -189,7 +190,8 @@ function learningPromptBlocks(db, genNum, userFocus, { curriculumCount = 4 } = {
     : "";
   const critiqueBlock = CODE_AWARE_LEARNING ? buildCritiqueSummary(db.sketches) : "";
   const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, curriculumCount);
-  return { preferenceSummary, critiqueBlock, curriculumBlock };
+  const shaderTutorialBlock = buildShaderTutorialPrompt(genNum, userFocus, Math.min(curriculumCount, 3));
+  return { preferenceSummary, critiqueBlock, curriculumBlock, shaderTutorialBlock };
 }
 
 function sketchTypeForIndex(index, size = BATCH_SIZE) {
@@ -395,7 +397,7 @@ async function generateBatchFast(db, userFocus, genNum, patternPlan) {
     ? `\nGood seeds to remix (evolutionary shaders: change ONE thing):\n${memory.remixSeeds.map((s, i) => `#${i + 1} "${s.title}" — ${(s.dna || []).join(", ")}`).join("\n")}`
     : "";
   const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
-  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+  const { preferenceSummary, critiqueBlock, curriculumBlock, shaderTutorialBlock } = learningPromptBlocks(
     db,
     genNum,
     userFocus,
@@ -430,6 +432,7 @@ GLSL ES 1.0 rules (every shader must compile):
 ${LEARNOPENGL_GLSL_RULES}
 ${MATH_COOKBOOK_COMPACT}
 ${curriculumBlock}
+${shaderTutorialBlock}
 ${preferenceSummary ? `\n${preferenceSummary}` : ""}
 ${critiqueBlock ? `\n${critiqueBlock}` : ""}
 
@@ -533,7 +536,7 @@ async function generateMetadataBatch(db, userFocus, genNum, patternPlan) {
     ? selectLearningExamples(db, userFocus, { limit: 4, currentGeneration: genNum })
     : [];
   const exampleDescriptions = buildExampleDescriptions(examples);
-  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+  const { preferenceSummary, critiqueBlock, curriculumBlock, shaderTutorialBlock } = learningPromptBlocks(
     db,
     genNum,
     userFocus,
@@ -548,6 +551,7 @@ Strategy: ${strategyForPrompt(db.currentStrategy)}
 Heuristics: ${(db.heuristics || []).slice(0, 4).join("; ")}
 ${remixSection}
 ${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${critiqueBlock ? `${critiqueBlock}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${curriculumBlock}
+${shaderTutorialBlock}
 ${MATH_COOKBOOK}
 Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only. ${DNA_PROMPT_RULE}`;
@@ -604,7 +608,7 @@ async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
     ? selectLearningExamples(db, meta, { limit: exampleLimit, currentGeneration: genNum })
     : [];
   const exampleContext = buildExampleContext(examples, LEARNING_CONTEXT_CHARS);
-  const { preferenceSummary, critiqueBlock, curriculumBlock } = learningPromptBlocks(
+  const { preferenceSummary, critiqueBlock, curriculumBlock, shaderTutorialBlock } = learningPromptBlocks(
     db,
     genNum,
     userFocus,
@@ -643,6 +647,7 @@ Rules:
 FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
 REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, Lambert diffuse, or mouse-reactive flow.
 ${curriculumBlock}
+${shaderTutorialBlock}
 ${critiqueBlock ? `\n${critiqueBlock}` : ""}
 ${MATH_COOKBOOK}
 Strategy: ${strategyForPrompt(db.currentStrategy)}${rollupHint}
@@ -1287,12 +1292,13 @@ function isValidThumbnail(value) {
     && value.length <= MAX_THUMBNAIL_BYTES;
 }
 
-function applyThumbnailsToSketches(sketches, thumbnails) {
+function applyThumbnailsToSketches(sketches, thumbnails, thumbnailVersion = 2) {
   if (!thumbnails || !Array.isArray(sketches)) return;
   for (const sketch of sketches) {
     const thumb = thumbnails[sketch.id];
     if (isValidThumbnail(thumb)) {
       sketch.thumbnail = thumb;
+      sketch.thumbnailVersion = thumbnailVersion;
     }
   }
 }
@@ -1670,7 +1676,8 @@ app.get("/api/shader-library", async (req, res) => {
       version: db.patternStats?.version ?? 0,
       patterns,
       catalogSize: patterns.length,
-      curriculum
+      curriculum,
+      shaderTutorial: getShaderTutorialSummary()
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -2053,10 +2060,12 @@ app.patch("/api/sketches/:id/rating", async (req, res) => {
 });
 
 app.post("/api/sketches/thumbnail", async (req, res) => {
-  const { id, thumbnail } = req.body || {};
+  const { id, thumbnail, thumbnailVersion } = req.body || {};
   if (!id || !isValidThumbnail(thumbnail)) {
     return res.status(400).json({ error: "Invalid sketch id or thumbnail." });
   }
+
+  const version = Number(thumbnailVersion) || 2;
 
   try {
     const db = await loadDB();
@@ -2065,8 +2074,9 @@ app.post("/api/sketches/thumbnail", async (req, res) => {
       return res.status(404).json({ error: "Sketch not found." });
     }
     db.sketches[idx].thumbnail = thumbnail;
+    db.sketches[idx].thumbnailVersion = version;
     await saveDB(db);
-    res.json({ success: true, id });
+    res.json({ success: true, id, thumbnailVersion: version });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
