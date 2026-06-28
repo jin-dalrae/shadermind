@@ -21,7 +21,12 @@ import { parseJsonFromModel } from "./lib/json.js";
 import { decodeGlslField, validateGlsl } from "./lib/glsl.js";
 import { assembleWorkingMemory, buildRemixSection, consolidateMemory } from "./lib/memory.js";
 import { MATH_COOKBOOK, MATH_COOKBOOK_COMPACT } from "./lib/math-cookbook.js";
-import { LEARNOPENGL_GLSL_RULES, LEARNOPENGL_SOURCE } from "./lib/learnopengl.js";
+import {
+  LEARNOPENGL_GLSL_RULES,
+  LEARNOPENGL_SOURCE,
+  buildCurriculumPrompt,
+  getCurriculumSummary
+} from "./lib/learnopengl.js";
 import {
   EMPTY_PREFERENCE_MEMORY,
   buildExampleContext,
@@ -376,6 +381,7 @@ async function generateBatchFast(db, userFocus, genNum, patternPlan) {
     ? `\nGood seeds to remix (evolutionary shaders: change ONE thing):\n${memory.remixSeeds.map((s, i) => `#${i + 1} "${s.title}" — ${(s.dna || []).join(", ")}`).join("\n")}`
     : "";
   const libraryBlock = patternPlan ? buildBatchPatternPrompt(patternPlan) : "";
+  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, Math.min(BATCH_SIZE + 1, 5));
 
   const systemPrompt = `You are ShaderMind. Write ${BATCH_SIZE} complete WebGL 1.0 fragment shaders in a single JSON response.
 You draw; the curator rates 1–5. Learn from ratings — small changes from last high-rated work, not full reinventions.
@@ -404,6 +410,7 @@ GLSL ES 1.0 rules (every shader must compile):
 - Under 55 lines each; float loops only, max 6 iterations
 ${LEARNOPENGL_GLSL_RULES}
 ${MATH_COOKBOOK_COMPACT}
+${curriculumBlock}
 
 Strategy: ${(memory.currentStrategy || "").slice(0, 400)}
 Heuristics: ${memory.heuristics.slice(0, 3).join("; ")}
@@ -508,6 +515,7 @@ async function generateMetadataBatch(db, userFocus, genNum, patternPlan) {
     ? selectLearningExamples(db, userFocus, { limit: 4, currentGeneration: genNum })
     : [];
   const exampleDescriptions = buildExampleDescriptions(examples);
+  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, Math.min(BATCH_SIZE + 1, 5));
   const systemPrompt = `You are ShaderMind planning ${BATCH_SIZE} shader sketches (metadata only, NO GLSL code).
 Change one thing from prior high-rated work when evolutionary — small steps, not reinventions.
 Return a JSON array of exactly ${BATCH_SIZE} objects with keys: title, type, hypothesis, dna.
@@ -516,7 +524,8 @@ Distribution: indices 0-${evolutionary - 1} type "evolutionary" (each hypothesis
 Strategy: ${strategyForPrompt(db.currentStrategy)}
 Heuristics: ${(db.heuristics || []).slice(0, 4).join("; ")}
 ${remixSection}
-${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${MATH_COOKBOOK}
+${preferenceSummary ? `Evidence-backed preference memory:\n${preferenceSummary}\n` : ""}${exampleDescriptions ? `Relevant past work (descriptions only, never copy titles or concepts):\n${exampleDescriptions}\n` : ""}${libraryBlock ? `\n${libraryBlock}\n` : ""}${curriculumBlock}
+${MATH_COOKBOOK}
 Make all concepts visibly different. Mutation concepts must explore underrepresented techniques.
 Output raw JSON array only. ${DNA_PROMPT_RULE}`;
 
@@ -576,6 +585,7 @@ async function generateGlslForSketch(meta, db, userFocus, genNum, index) {
     ? buildPreferenceSummary(db.preferenceMemory || EMPTY_PREFERENCE_MEMORY)
     : "";
   const noveltyBrief = buildNoveltyBrief(examples);
+  const curriculumBlock = buildCurriculumPrompt(genNum, userFocus, 3);
 
   let systemPrompt;
   let basePrompt;
@@ -607,6 +617,7 @@ Rules:
 - LearnOpenGL discipline (${LEARNOPENGL_SOURCE}): linear lighting math, then gamma once at end
 FORBIDDEN (instant rejection): a lone smoothstep circle/ellipse on black with sin pulse — color * mask on empty background.
 REQUIRED: fill the frame — ripples, hash noise, FBM layers, polar UV, domain warp, Lambert diffuse, or mouse-reactive flow.
+${curriculumBlock}
 ${MATH_COOKBOOK}
 Strategy: ${strategyForPrompt(db.currentStrategy)}${rollupHint}
 ${preferenceSummary}`;
@@ -1526,6 +1537,8 @@ app.get("/api/state", async (req, res) => {
       preferenceMemory: db.preferenceMemory || EMPTY_PREFERENCE_MEMORY,
       patternLibrary: {
         patternCount: rankPatterns(db.patternStats).length,
+        curriculumChapters: getCurriculumSummary().totalChapters,
+        curriculumSource: LEARNOPENGL_SOURCE,
         topRated: rankPatterns(db.patternStats)
           .filter(p => p.averageRating >= 4)
           .slice(0, 5)
@@ -1577,11 +1590,12 @@ app.get("/api/shader-library", async (req, res) => {
       uses: p.uses,
       lastGeneration: p.score?.lastGeneration ?? null
     }));
+    const curriculum = getCurriculumSummary();
     res.json({
       version: db.patternStats?.version ?? 0,
       patterns,
       catalogSize: patterns.length,
-      curriculum: LEARNOPENGL_SOURCE
+      curriculum
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
