@@ -6,9 +6,11 @@ ShaderMind is a drawing tool — but the hand holding the pen is an agent. It ge
 
 Like a sketchbook that remembers: everyday shaders, **small changes from the last**, not reinventions. Inspired by [Zach Lieberman's daily code sketches](https://zachlieberman.medium.com/i-spent-10-years-making-a-sketch-in-code-every-day-and-heres-what-i-learned-b845e811160d). The **3,650** count is a north-star metaphor for that practice — not a calendar.
 
-Under the hood, preference memory follows [PLUS](https://arxiv.org/abs/2507.13579): your taste compressed into readable text that sharpens every batch.
+Under the hood, preference memory follows [PLUS](https://arxiv.org/abs/2507.13579): your taste compressed into readable text that sharpens every batch — joined with **code-aware retrieval**, a curated **pattern library** ranked by your ratings, per-shetch critique, and an optional **voice curator** you can talk to in a LiveKit room.
 
 **Hackathon:** 2026 AI Engineer World's Fair · Continual Learning track
+
+> **Document status:** Synced with `LEARNING` branch on 2026-06-28 alongside `prd.md` and `pitch.md`. Code-aware learning, pattern library, voice curator, and the full per-task DigitalOcean model pool table are reflected here.
 
 ---
 

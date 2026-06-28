@@ -10,6 +10,7 @@
     "test": "node --test",
     "migrate:mongo": "node scripts/migrate-json-to-mongo.js",
     "repair:glsl": "node scripts/repair-glsl.js",
+    "repair:gallery": "node scripts/repair-gallery-glsl.js",
     "agent:install": "npm install --prefix agent",
     "agent:dev": "npm run dev --prefix agent",
     "agent:start": "npm run start --prefix agent"

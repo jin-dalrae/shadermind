@@ -99,6 +99,47 @@ function fixIntLoops(code) {
     );
 }
 
+function fixCorruptUniforms(code) {
+  return code
+    .replace(/\bu\.time\b/g, "u_time")
+    .replace(/\bul_resolution\b/g, "u_resolution")
+    .replace(/\bnone\s+vec"?\s*uniform\s+float\s+u_time\s*;/gi, "uniform float u_time;")
+    .replace(/\bnone\s+uniform\s+vec2\s+u_resolution\s*;/gi, "uniform vec2 u_resolution;")
+    .replace(/\bnone\s+relogical\s+vec2\s+u_mouse\s*;/gi, "uniform vec2 u_mouse;")
+    .replace(/uniform\s+vec4\s+u_mouse\s*;/g, "uniform vec2 u_mouse;");
+}
+
+/** GLSL ES 1.0 rejects float + int in many drivers (e.g. float(i+1)). */
+function fixFloatIntMix(code) {
+  return code
+    .replace(/float\s*\(\s*([a-zA-Z_]\w*)\s*\+\s*(\d+)\s*\)/g, "($1 + $2.0)")
+    .replace(/([a-zA-Z_]\w*)\s*\*\s*float\s*\(\s*([a-zA-Z_]\w*)\s*\+\s*(\d+)\s*\)/g, "$1 * ($2 + $3.0)");
+}
+
+function fixBrokenDotScalar(code) {
+  return code.replace(
+    /vec3\s+xyz\s*=\s*vec3\s*\(\s*dot\s*\(\s*x0\s*,\s*p\.x\s*\)\s*,\s*dot\s*\(\s*x1\s*,\s*p\.y\s*\)\s*,\s*dot\s*\(\s*x2\s*,\s*p\.z\s*\)\s*\)\s*;/g,
+    "vec3 xyz = vec3(dot(x0, p), dot(x1, p), dot(x2, p));"
+  );
+}
+
+function balanceExtraParens(code) {
+  let open = 0;
+  let close = 0;
+  for (const ch of code) {
+    if (ch === "(") open += 1;
+    else if (ch === ")") close += 1;
+  }
+  let patched = code;
+  while (close > open && patched.includes(")")) {
+    const idx = patched.lastIndexOf(")");
+    if (idx < 0) break;
+    patched = `${patched.slice(0, idx)}${patched.slice(idx + 1)}`;
+    close -= 1;
+  }
+  return patched;
+}
+
 function extractBalancedBlock(code, startIdx) {
   const open = code.indexOf("{", startIdx);
   if (open < 0) return null;
@@ -168,7 +209,15 @@ function fixInvalidSwizzles(code) {
 export function patchGlslForWebGL(code) {
   if (!code || typeof code !== "string") return "";
 
-  let patched = fixPrecisionDeclaration(fixIntLoops(fixInvalidSwizzles(code)));
+  let patched = fixPrecisionDeclaration(
+    balanceExtraParens(
+      fixBrokenDotScalar(
+        fixFloatIntMix(
+          fixCorruptUniforms(fixIntLoops(fixInvalidSwizzles(code)))
+        )
+      )
+    )
+  );
 
   if (hasBrokenPermuteDef(patched)) {
     patched = removeBrokenPermuteDefs(patched);

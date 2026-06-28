@@ -110,6 +110,20 @@ void main() {
   assert.equal(isLowEffortGlsl(ring), true);
 });
 
+test("patchGlslForWebGL fixes corrupt uniforms and float-int mix", () => {
+  const shader = `precision mediump float;
+uniform float u.time;
+uniform vec2 ul_resolution;
+void main() {
+  float t = float(i+1);
+  gl_FragColor = vec4(vec3(t), 1.0);
+}`;
+  const patched = patchGlslForWebGL(shader);
+  assert.ok(patched.includes("u_time"));
+  assert.ok(patched.includes("u_resolution"));
+  assert.ok(!patched.includes("u.time"));
+});
+
 test("patchGlslForWebGL hoists helpers defined after main()", () => {
   const shader = `precision mediump float;
 uniform float u_time;
