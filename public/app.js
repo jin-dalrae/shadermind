@@ -89,7 +89,6 @@ class ShaderMindUI {
       galleryNext: document.getElementById("galleryNext"),
       galleryPageInfo: document.getElementById("galleryPageInfo"),
       gallerySub: document.getElementById("gallerySub"),
-      galleryFilterGen: document.getElementById("galleryFilterGen"),
       galleryFilterRating: document.getElementById("galleryFilterRating"),
       galleryRefreshThumbs: document.getElementById("galleryRefreshThumbs"),
       reflectionText: document.getElementById("reflectionText"),
@@ -145,9 +144,6 @@ class ShaderMindUI {
       this.updateGallerySubcopy();
       this.loadGalleryPage();
     };
-    if (this.els.galleryFilterGen) {
-      this.els.galleryFilterGen.addEventListener("change", onGalleryFilterChange);
-    }
     if (this.els.galleryFilterRating) {
       this.els.galleryFilterRating.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
         cb.addEventListener("change", onGalleryFilterChange);
@@ -240,61 +236,20 @@ class ShaderMindUI {
     });
   }
 
-  populateGenerationFilter() {
-    const container = this.els.galleryFilterGen;
-    if (!container) return;
-    const generations = new Set();
-    for (const s of this.sketches || []) {
-      if (s.generation != null) generations.add(s.generation);
-    }
-    for (const s of this.galleryItems || []) {
-      if (s.generation != null) generations.add(s.generation);
-    }
-    const sorted = [...generations].sort((a, b) => b - a);
-    if (!sorted.length) {
-      container.innerHTML = '<span class="filter-empty">No generations yet</span>';
-      return;
-    }
-    container.innerHTML = "";
-    for (const gen of sorted) {
-      const label = document.createElement("label");
-      label.className = "filter-chip";
-      const cb = document.createElement("input");
-      cb.type = "checkbox";
-      cb.value = String(gen);
-      label.appendChild(cb);
-      label.appendChild(document.createTextNode(` Gen ${gen}`));
-      container.appendChild(label);
-    }
-    container.querySelectorAll('input[type="checkbox"]').forEach((cb) => {
-      cb.addEventListener("change", () => {
-        this.galleryPage = 1;
-        this.galleryKey = null;
-        this.updateGallerySubcopy();
-        this.loadGalleryPage();
-      });
-    });
-  }
-
   galleryQueryParams() {
-    const gens = this.getSelectedFilters("galleryFilterGenField");
     const ratings = this.getSelectedFilters("galleryFilterRatingField");
-    const limit = gens.length ? 100 : this.galleryLimit;
     const params = new URLSearchParams({
       page: String(this.galleryPage),
-      limit: String(limit)
+      limit: String(this.galleryLimit)
     });
-    for (const g of gens) params.append("generation", g);
     for (const r of ratings) params.append("rating", r);
     return params;
   }
 
   updateGallerySubcopy() {
     if (!this.els.gallerySub) return;
-    const gens = this.getSelectedFilters("galleryFilterGenField");
     const ratings = this.getSelectedFilters("galleryFilterRatingField");
     const parts = [];
-    if (gens.length) parts.push(`Gen ${gens.join(", ")}`);
     if (ratings.length) parts.push(`Rating ${ratings.join(", ")}`);
     parts.length = parts.length;
     this.els.gallerySub.textContent = parts.length
@@ -359,7 +314,6 @@ class ShaderMindUI {
       this.galleryItems = data.items || data;
       this.galleryPages = data.pages || 1;
       this.galleryPage = data.page || this.galleryPage;
-      this.populateGenerationFilter();
       this.renderGalleryGrid();
     } catch (err) {
       console.error(err);
@@ -459,16 +413,13 @@ class ShaderMindUI {
   }
 
   updateGalleryFilters(state) {
-    this.populateGenerationFilter();
     this.updateGallerySubcopy();
   }
 
   updateGallerySubcopy() {
     if (!this.els.gallerySub) return;
-    const gens = this.getSelectedFilters("galleryFilterGenField");
     const ratings = this.getSelectedFilters("galleryFilterRatingField");
     const parts = [];
-    if (gens.length) parts.push(`Gen ${gens.join(", ")}`);
     if (ratings.length) parts.push(`Rating ${ratings.join(", ")}`);
     this.els.gallerySub.textContent = parts.length
       ? `Filtered by ${parts.join(" · ")} — click a sketch to review.`
