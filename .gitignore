@@ -3,7 +3,9 @@ node_modules/
 .DS_Store
 *.log
 *.db
+database.json
 database.json.pre-sanitize.*.bak
+.wrangler/
 .vscode/settings.json.omo/
 
 .omo/

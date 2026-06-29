@@ -4,7 +4,7 @@
   "description": "ShaderMind — autonomous GLSL artist with continual learning via Gemini.",
   "main": "server.js",
   "type": "module",
-"scripts": {
+  "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
     "test": "node --test",
@@ -23,5 +23,8 @@
     "livekit-server-sdk": "^2.14.0",
     "mongodb": "^6.21.0",
     "openai": "^4.52.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
   }
 }

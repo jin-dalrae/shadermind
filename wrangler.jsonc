@@ -1,0 +1,37 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "shadermind",
+  "main": "src/index.js",
+  "compatibility_date": "2026-06-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "shadermind",
+      "database_id": "22ae2811-1928-4071-9e94-9bf32f9a99c7",
+      "migrations_dir": "./migrations"
+    }
+  ],
+  "workflows": [
+    {
+      "binding": "GENERATION",
+      "name": "shadermind-generation",
+      "class_name": "GenerationWorkflow"
+    }
+  ],
+  "vars": {
+    "ENVIRONMENT": "production",
+    "AI_PROVIDER": "gemini",
+    "AI_MODEL": "gemini-3.5-flash",
+    "BATCH_SIZE": "3",
+    "GENERATION_ENABLED": "true",
+    "RATING_SCALE": "1-5"
+  },
+  "observability": {
+    "enabled": true
+  }
+}
