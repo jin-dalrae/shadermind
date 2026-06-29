@@ -569,7 +569,6 @@ class ShaderMindUI {
       if (this.els.detailSub) {
         this.els.detailSub.textContent = this.els.detailSub.textContent.replace(/ · \d\/5$/, ` · ${rating}/5`);
       }
-      }
     } catch (err) {
       alert(`Rating error: ${err.message}`);
     }
