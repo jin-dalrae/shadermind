@@ -469,21 +469,23 @@ main {
   opacity: 0.5;
   cursor: progress;
 }
-  min-width: 100px;
-}
 
 .archive-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 14px;
   margin-bottom: 24px;
 }
 
-@media (min-width: 700px) {
-  .archive-grid { grid-template-columns: repeat(4, 1fr); }
+@media (max-width: 520px) {
+  .archive-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 @media (min-width: 1100px) {
+  .archive-grid { grid-template-columns: repeat(4, 1fr); }
+}
+
+@media (min-width: 1500px) {
   .archive-grid { grid-template-columns: repeat(5, 1fr); }
 }
 
@@ -590,7 +592,6 @@ main {
 .archive-delete-btn:hover {
   border-color: #d66;
   color: #d66;
-}
 }
 
 .archive-cell .rate-actions {
