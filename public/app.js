@@ -1098,9 +1098,11 @@ class ShaderMindUI {
       : "Rate every shader from 1 to 5";
   }
 
-  async captureSketchThumbnail(sketch, { preferDetail = false } = {}) {
+  async captureSketchThumbnail(sketch, { preferDetail = false, size, quality } = {}) {
+    const captureSize = size || THUMB_CAPTURE_SIZE;
+    const captureQuality = quality || THUMB_QUALITY;
     if (preferDetail && this.detailRenderer?.program && this.detailSketch?.id === sketch.id) {
-      const fromDetail = this.detailRenderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
+      const fromDetail = this.detailRenderer.captureThumbnail(captureSize, THUMB_TIME, captureQuality);
       if (fromDetail) return fromDetail;
     }
 
@@ -1108,17 +1110,17 @@ class ShaderMindUI {
     if (grid.hasCell(sketch.id)) {
       const fromGrid = grid.captureCellThumbnail(
         sketch.id,
-        THUMB_CAPTURE_SIZE,
+        captureSize,
         THUMB_TIME,
-        THUMB_QUALITY
+        captureQuality
       );
       if (fromGrid) return fromGrid;
     }
-    return this.renderOffscreenThumbnail(sketch);
+    return this.renderOffscreenThumbnail(sketch, { size: captureSize, quality: captureQuality });
   }
 
   async persistSketchThumbnail(sketch, thumbnail) {
-    if (!sketch?.id || !thumbnail) return false;
+    if (!sketch?.id || !thumbnail) return { ok: false, tooLarge: false };
     sketch.thumbnail = thumbnail;
 
     const local = this.sketches.find(s => s.id === sketch.id);
@@ -1137,7 +1139,9 @@ class ShaderMindUI {
           thumbnailVersion: THUMB_CAPTURE_VERSION
         })
       });
-      if (!res.ok) return false;
+      if (!res.ok) {
+        return { ok: false, tooLarge: res.status === 400 };
+      }
       sketch.thumbnailVersion = THUMB_CAPTURE_VERSION;
       this.thumbBackfillAttempted.add(sketch.id);
       this.galleryKey = null;
@@ -1149,10 +1153,10 @@ class ShaderMindUI {
       if (this.detailSketch?.id === sketch.id && this.els.detailCanvas) {
         this.detailRenderer?.canvas && (this.detailRenderer.canvas.style.opacity = "1");
       }
-      return true;
+      return { ok: true, tooLarge: false };
     } catch (err) {
       console.warn("Thumbnail upload failed:", err.message);
-      return false;
+      return { ok: false, tooLarge: false };
     }
   }
 
@@ -1181,19 +1185,33 @@ class ShaderMindUI {
     if (this.thumbBackfillBusy || !this.thumbBackfillQueue.length) return;
     this.thumbBackfillBusy = true;
 
+    const RETRY_PROFILE = [
+      { size: THUMB_CAPTURE_SIZE, quality: THUMB_QUALITY },
+      { size: THUMB_CAPTURE_SIZE, quality: 0.65 },
+      { size: 384, quality: 0.55 },
+      { size: 256, quality: 0.5 },
+      { size: 192, quality: 0.4 }
+    ];
+
     while (this.thumbBackfillQueue.length) {
 
       const sketch = this.thumbBackfillQueue.shift();
       if (!sketch || !this.sketchNeedsThumbnail(sketch)) continue;
 
-      const thumb = await this.captureSketchThumbnail(sketch);
-      if (!thumb) {
-        this.thumbBackfillAttempted.add(sketch.id);
-        this.markGalleryThumbFailed(sketch.id);
-        continue;
+      let succeeded = false;
+      for (const { size, quality } of RETRY_PROFILE) {
+        const thumb = await this.captureSketchThumbnail(sketch, { size, quality });
+        if (!thumb) continue;
+        const result = await this.persistSketchThumbnail(sketch, thumb);
+        if (result.ok) { succeeded = true; break; }
+        if (!result.tooLarge) break;
       }
 
-      await this.persistSketchThumbnail(sketch, thumb);
+      if (!succeeded) {
+        this.thumbBackfillAttempted.add(sketch.id);
+        this.markGalleryThumbFailed(sketch.id);
+      }
+
       await new Promise(r => window.setTimeout(r, 350));
     }
 
@@ -1220,21 +1238,23 @@ class ShaderMindUI {
     img.alt = "";
   }
 
-  async renderOffscreenThumbnail(sketch) {
+  async renderOffscreenThumbnail(sketch, { size, quality } = {}) {
+    const captureSize = size || THUMB_CAPTURE_SIZE;
+    const captureQuality = quality || THUMB_QUALITY;
     const canvas = document.createElement("canvas");
-    canvas.width = THUMB_CAPTURE_SIZE;
-    canvas.height = THUMB_CAPTURE_SIZE;
-    canvas.style.cssText = `position:fixed;left:-9999px;width:${THUMB_CAPTURE_SIZE}px;height:${THUMB_CAPTURE_SIZE}px;pointer-events:none;`;
+    canvas.width = captureSize;
+    canvas.height = captureSize;
+    canvas.style.cssText = `position:fixed;left:-9999px;width:${captureSize}px;height:${captureSize}px;pointer-events:none;`;
     document.body.appendChild(canvas);
 
     const renderer = new ShaderRenderer(canvas, {
       silent: true,
-      fixedSize: THUMB_CAPTURE_SIZE
+      fixedSize: captureSize
     });
     try {
       const ok = await renderer.compile(sketch.glsl);
       if (!ok) return null;
-      return renderer.captureThumbnail(THUMB_CAPTURE_SIZE, THUMB_TIME, THUMB_QUALITY);
+      return renderer.captureThumbnail(captureSize, THUMB_TIME, captureQuality);
     } finally {
       renderer.destroy();
       canvas.remove();
