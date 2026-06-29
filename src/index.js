@@ -244,6 +244,16 @@ async function handleFeedback(request, env) {
   db.successRate = rated.length ? Math.round((good / rated.length) * 1000) / 10 : 0;
   // Increment generation count
   db.generationCount = Math.max(db.generationCount || 0, Number(generation) || 0);
+
+  db.activeBatch = null;
+  db.autopilot = {
+    ...(db.autopilot || {}),
+    phase: "idle",
+    currentBatch: null,
+    currentGeneration: null,
+    awaitingHuman: false
+  };
+
   await saveDB(env, db);
   return json({
     success: true,
