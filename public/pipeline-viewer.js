@@ -1,106 +1,36 @@
 /**
- * 3D pipeline viewer for GLSL shader generation.
+ * Pipeline viewer — non-rotating, artifact-first view of the shader
+ * generation pipeline for the selected sketch.
  *
- * Renders a CNN-style architecture diagram inline in any container — no modal,
- * no fullscreen overlay. Click a layer box to see real provenance data from
- * the selected sketch in a small panel below the 3D scene.
+ * Renders 7 stage cards inline as a flat, static row. Every card shows
+ * the *real artifact* from that step (curator focus text, working memory
+ * snapshot, the actual prompt sent to the model, inference provenance,
+ * compile result, detected patterns, output shader). Nothing is hidden
+ * behind a click — clicking a card just highlights it.
  *
- * Public API:
+ * Replaces the prior Three.js CNN-style diagram (which rotated constantly
+ * and showed empty colored boxes with no labels).
+ *
+ * Public API (unchanged so app.js doesn't need to change):
  *   window.PipelineViewer.openInline(sketch, containerEl, layerPanelEl)
  *   window.PipelineViewer.setSketch(sketch)
  *   window.PipelineViewer.close()
  *   window.PipelineViewer.relayoutInline()
  */
-import * as THREE from "./vendor/three.module.min.js";
 
-const LAYER_DEFS = [
-  { id: "focus",      name: "User Focus",         short: "What's the curator asking for this batch?",                color: 0x6a8caf },
-  { id: "memory",     name: "Working Memory",     short: "Pulls strategy, heuristics, remix seeds, preference memory, and patterns into a single context blob.", color: 0x8a9bb8,
-    describe: () => "Server-side, no LLM. Reads currentStrategy, top heuristics, last 3 rated \u22654 sketches, preference memory summary, critique block, rollup, and pattern plan. All concatenated into one object passed to the prompt builder." },
-  { id: "prompt",     name: "Prompt Construction", short: "Concatenates system + user prompt with all context.",    color: 0xb0a070,
-    describe: () => "Server-side, no LLM. Builds the system prompt (role, distribution rules, GLSL ES 1.0 constraints, math cookbook, all context) and the user prompt (Generation #N. Focus: X. Write N distinctive compile-ready shaders.)." },
-  { id: "inference",  name: "LLM Inference",      short: "The single inference call that decides everything (math, color, time, motion).", color: 0xc97a5b,
-    isInference: true },
-  { id: "validation", name: "GLSL Validation",    short: "Local checks: length, void main, gl_FragColor, ES 1.0 syntax, low-effort detector.", color: 0x8caa6a,
-    describe: () => "Server-side, no LLM. \u226580 chars, has void main, has gl_FragColor, no ES 3.0 syntax, no .u/.v swizzles, no placeholder signatures, balanced braces, no undefined functions, not a low-effort pulsing-circle." },
-  { id: "pattern",    name: "Pattern Attachment", short: "Detects pattern IDs from GLSL body (FBM, polar, ripple, mouse-reactive, etc.).", color: 0x9a7ab8,
-    describe: () => "Server-side, no LLM. detectPatternIds() scans the GLSL body for known technique signatures and tags the sketch with patternIds so the next batch's plan can route similar sketches to complementary techniques." },
-  { id: "output",     name: "GLSL Shader (output)", short: "The final compiled shader, rendered live in the inline canvas.", color: 0xd0a85a,
-    isOutput: true }
+const STAGES = [
+  { id: "focus",      name: "Curator Focus",  color: "#6a8caf", number: 1, render: renderFocus },
+  { id: "memory",     name: "Working Memory", color: "#8a9bb8", number: 2, render: renderMemory },
+  { id: "prompt",     name: "Prompt",         color: "#b0a070", number: 3, render: renderPrompt },
+  { id: "inference",  name: "Inference",      color: "#c97a5b", number: 4, render: renderInference },
+  { id: "validation", name: "Validation",     color: "#8caa6a", number: 5, render: renderValidation },
+  { id: "pattern",    name: "Pattern Match",  color: "#9a7ab8", number: 6, render: renderPattern },
+  { id: "output",     name: "Output Shader",  color: "#d0a85a", number: 7, render: renderOutput }
 ];
-
-const BOX_W = 1.5;
-const BOX_H = 0.95;
-const BOX_D = 0.9;
-const LAYER_GAP = 0.7;
-const CAMERA_Z = 9;
 
 let state = null;
 
-function buildScene() {
-  const scene = new THREE.Scene();
-  scene.background = null;
-  const camera = new THREE.PerspectiveCamera(45, 1, 0.1, 200);
-  camera.position.set(0, 2.5, CAMERA_Z);
-  camera.lookAt(0, 0, 0);
-
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  const dir = new THREE.DirectionalLight(0xffffff, 0.85);
-  dir.position.set(4, 6, 8);
-  scene.add(dir);
-  scene.add(new THREE.DirectionalLight(0xa0b8d8, 0.35).position.set(-6, -3, 4));
-
-  const totalWidth = LAYER_DEFS.length * (BOX_W + LAYER_GAP) - LAYER_GAP;
-  const startX = -totalWidth / 2 + BOX_W / 2;
-  const layerMeshes = [];
-
-  LAYER_DEFS.forEach((layer, i) => {
-    const x = startX + i * (BOX_W + LAYER_GAP);
-    const geometry = new THREE.BoxGeometry(BOX_W, BOX_H, BOX_D);
-    const material = new THREE.MeshStandardMaterial({
-      color: layer.color,
-      transparent: true,
-      opacity: 0.88,
-      roughness: 0.45,
-      metalness: 0.1
-    });
-    const mesh = new THREE.Mesh(geometry, material);
-    mesh.position.set(x, 0, 0);
-    mesh.userData = { layerIndex: i, layer };
-    scene.add(mesh);
-    layerMeshes.push(mesh);
-
-    const edges = new THREE.LineSegments(
-      new THREE.EdgesGeometry(geometry),
-      new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.32 })
-    );
-    edges.position.copy(mesh.position);
-    scene.add(edges);
-
-    if (i < LAYER_DEFS.length - 1) {
-      const startXArrow = x + BOX_W / 2 + 0.04;
-      const endXArrow = startXArrow + LAYER_GAP - 0.08;
-      const arrow = new THREE.ArrowHelper(
-        new THREE.Vector3(1, 0, 0),
-        new THREE.Vector3(startXArrow, 0, 0),
-        endXArrow - startXArrow,
-        0xe0d4b8,
-        0.16,
-        0.1
-      );
-      scene.add(arrow);
-    }
-  });
-
-  const base = new THREE.Mesh(
-    new THREE.PlaneGeometry(40, 0.05),
-    new THREE.MeshBasicMaterial({ color: 0x2a2a2a, transparent: true, opacity: 0.35 })
-  );
-  base.position.y = -BOX_H / 2 - 0.05;
-  scene.add(base);
-
-  return { scene, camera, layerMeshes };
-}
+// ---------- helpers ----------
 
 function escapeHtml(value) {
   if (value == null) return "";
@@ -112,227 +42,341 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
-function renderLayerBody(layer, sketch) {
-  if (layer.id === "focus") {
-    if (!sketch) return `<p class="pipeline-layer-detail">No sketch data.</p>`;
-    return `
-      <dl class="pipeline-kv">
-        <dt>Curator focus</dt><dd>${escapeHtml(sketch.generationFocus || "(not recorded)")}</dd>
-        <dt>Generation</dt><dd>${escapeHtml(String(sketch.generation ?? "?"))}</dd>
-        <dt>Sketch ID</dt><dd>${escapeHtml(sketch.id || "?")}</dd>
-      </dl>`;
-  }
-  if (layer.id === "inference") {
-    if (!sketch) return `<p class="pipeline-layer-detail">No sketch data.</p>`;
-    const model = sketch.model || "(model not recorded)";
-    const provider = sketch.provider || "unknown";
-    const latency = sketch.inferenceLatencyMs != null ? `${sketch.inferenceLatencyMs} ms` : "(latency not recorded)";
-    const ts = sketch.inferenceTimestamp || "(timestamp not recorded)";
-    const usage = sketch.inferenceUsage || {};
-    const totalTok = usage.totalTokens != null ? usage.totalTokens : "?";
-    const promptTok = usage.promptTokens != null ? usage.promptTokens : "?";
-    const completionTok = usage.completionTokens != null ? usage.completionTokens : "?";
-    const prompt = sketch.prompt || "(prompt not recorded)";
-    return `
-      <dl class="pipeline-kv">
-        <dt>Provider</dt><dd>${escapeHtml(provider)}</dd>
-        <dt>Model</dt><dd>${escapeHtml(model)}</dd>
-        <dt>Latency</dt><dd>${escapeHtml(latency)}</dd>
-        <dt>Tokens (total / prompt / completion)</dt><dd>${escapeHtml(String(totalTok))} / ${escapeHtml(String(promptTok))} / ${escapeHtml(String(completionTok))}</dd>
-        <dt>Timestamp</dt><dd>${escapeHtml(ts)}</dd>
-      </dl>
-      <details class="pipeline-prompt-details" open>
-        <summary>User prompt sent to model</summary>
-        <pre class="pipeline-prompt">${escapeHtml(prompt)}</pre>
-      </details>`;
-  }
-  if (layer.id === "output") {
-    if (!sketch) return `<p class="pipeline-layer-detail">No sketch data.</p>`;
-    const glsl = sketch.glsl || "(no GLSL)";
-    const compileStatus = sketch.compile?.success === false ? "FAILED" : "OK";
-    const dna = (sketch.dna || []).join(", ") || "(none)";
-    return `
-      <dl class="pipeline-kv">
-        <dt>Title</dt><dd>${escapeHtml(sketch.title || "Untitled")}</dd>
-        <dt>Type</dt><dd>${escapeHtml(sketch.type || "?")}</dd>
-        <dt>DNA</dt><dd>${escapeHtml(dna)}</dd>
-        <dt>Compile</dt><dd>${escapeHtml(compileStatus)}</dd>
-      </dl>
-      <details class="pipeline-prompt-details" open>
-        <summary>GLSL source</summary>
-        <pre class="pipeline-glsl">${escapeHtml(glsl)}</pre>
-      </details>`;
-  }
-  if (layer.id === "pattern") {
-    if (!sketch) return `<p class="pipeline-layer-detail">No sketch data.</p>`;
-    const ids = (sketch.patternIds || []).join(", ") || "(no pattern ids detected)";
-    return `
-      <dl class="pipeline-kv">
-        <dt>Detected pattern IDs</dt><dd>${escapeHtml(ids)}</dd>
-      </dl>
-      <p class="pipeline-layer-detail">Patterns surface in the next batch's plan to route similar sketches toward complementary techniques.</p>`;
-  }
-  if (layer.describe) {
-    return `<p class="pipeline-layer-detail">${escapeHtml(layer.describe())}</p>`;
-  }
-  return `<p class="pipeline-layer-detail">${escapeHtml(layer.short)}</p>`;
+function shortNumber(n) {
+  if (n == null) return "—";
+  if (n >= 1000) return `${(n / 1000).toFixed(1)}k`;
+  return String(n);
 }
 
-function selectLayer(idx) {
+function pill(text, cls = "") {
+  return `<span class="pv-pill ${cls}">${escapeHtml(text)}</span>`;
+}
+
+function kv(rows) {
+  return `<dl class="pv-kv">${rows
+    .filter(r => r.value !== null && r.value !== undefined && r.value !== "")
+    .map(r => `<dt>${escapeHtml(r.label)}</dt><dd>${r.html || escapeHtml(r.value)}</dd>`)
+    .join("")}</dl>`;
+}
+
+async function fetchState() {
+  try {
+    const [stateRes, sketchesRes] = await Promise.all([
+      fetch("/api/state"),
+      fetch("/api/sketches")
+    ]);
+    const stateJson = await stateRes.json();
+    const sketchesJson = await sketchesRes.json();
+    return { state: stateJson, sketches: Array.isArray(sketchesJson) ? sketchesJson : [] };
+  } catch (err) {
+    return { state: null, sketches: [], error: err.message };
+  }
+}
+
+// ---------- per-stage renderers ----------
+
+// Stage 1 — Curator Focus
+function renderFocus(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const focus = sketch.generationFocus || sketch.lastHumanOpinion || null;
+  const focusHtml = focus
+    ? `<div class="pv-focus-text">${escapeHtml(focus)}</div>`
+    : `<div class="pv-missing">(no focus recorded for this batch — autopilot used default heuristics)</div>`;
+  return `
+    <div class="pv-card-body">
+      <div class="pv-label">Focus text</div>
+      ${focusHtml}
+      ${kv([
+        { label: "Generation", value: sketch.generation ?? "?" },
+        { label: "Sketch ID", value: sketch.id || "?" },
+        { label: "Type", value: sketch.type || "?" }
+      ])}
+    </div>`;
+}
+
+// Stage 2 — Working Memory (strategy + heuristics + remix parents)
+function renderMemory(sketch, ctx) {
+  if (!ctx || !ctx.state) {
+    return `<div class="pv-empty">Loading memory…</div>`;
+  }
+  const strategy = (ctx.state.currentStrategy || "").trim();
+  const strategyTrimmed = strategy.length > 280 ? strategy.slice(0, 280) + "…" : strategy;
+  const heuristics = (ctx.state.heuristics || []).slice(0, 4);
+  const all = ctx.sketches || [];
+  const remixParents = all
+    .filter(x => x.rating && x.rating >= 4 && x.id !== sketch?.id)
+    .sort((a, b) => (b.rating || 0) - (a.rating || 0))
+    .slice(0, 4);
+
+  return `
+    <div class="pv-card-body">
+      <div class="pv-label">Strategy genome</div>
+      ${strategyTrimmed
+        ? `<div class="pv-strategy">${escapeHtml(strategyTrimmed)}</div>`
+        : `<div class="pv-missing">(no strategy)</div>`}
+      ${heuristics.length ? `
+        <div class="pv-label">Heuristics (top ${heuristics.length})</div>
+        <ul class="pv-heuristics">${heuristics.map(h => `<li>${escapeHtml(h)}</li>`).join("")}</ul>
+      ` : ""}
+      ${remixParents.length ? `
+        <div class="pv-label">Top-rated remix parents</div>
+        <ul class="pv-remix">${remixParents.map(p => `
+          <li>
+            <span class="pv-remix-title">${escapeHtml(p.title || p.id)}</span>
+            <span class="pv-pill pv-pill-rate">${escapeHtml(String(p.rating))}/5</span>
+            <span class="pv-remix-dna">${escapeHtml((p.dna || []).slice(0, 3).join(" · "))}</span>
+          </li>`).join("")}</ul>
+      ` : `<div class="pv-missing">No 4+ rated sketches yet.</div>`}
+    </div>`;
+}
+
+// Stage 3 — Prompt (verbatim user prompt sent to the model)
+function renderPrompt(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const prompt = sketch.prompt;
+  if (!prompt) {
+    return `<div class="pv-card-body">
+      <div class="pv-missing">Prompt not recorded for this sketch. Inference provenance (prompt + tokens + latency) was added in a later version — only batches generated after that include the actual prompt sent to the model.</div>
+      ${kv([
+        { label: "Title", value: sketch.title || "?" },
+        { label: "Type", value: sketch.type || "?" },
+        { label: "DNA", value: (sketch.dna || []).join(", ") || "(none)" }
+      ])}
+    </div>`;
+  }
+  return `
+    <div class="pv-card-body">
+      <div class="pv-label">User prompt sent to model</div>
+      <pre class="pv-prompt">${escapeHtml(prompt)}</pre>
+    </div>`;
+}
+
+// Stage 4 — Inference provenance
+function renderInference(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const hasProv = !!(sketch.provider || sketch.model || sketch.inferenceLatencyMs != null || sketch.inferenceUsage);
+  if (!hasProv) {
+    return `<div class="pv-card-body">
+      <div class="pv-missing">Inference provenance not recorded for this sketch (added in a later version). Hypothesis is still available:</div>
+      ${kv([
+        { label: "Hypothesis", value: sketch.hypothesis || "(none)" }
+      ])}
+    </div>`;
+  }
+  const usage = sketch.inferenceUsage || {};
+  const rows = [
+    { label: "Provider", value: sketch.provider || "?" },
+    { label: "Model", value: sketch.model || "?", html: `<span class="pv-mono">${escapeHtml(sketch.model || "?")}</span>` },
+    { label: "Latency", value: sketch.inferenceLatencyMs != null ? `${sketch.inferenceLatencyMs} ms` : "—" },
+    {
+      label: "Tokens (prompt / completion / total)",
+      html: `<span class="pv-mono">${shortNumber(usage.promptTokens)} / ${shortNumber(usage.completionTokens)} / ${shortNumber(usage.totalTokens)}</span>`
+    },
+    { label: "Timestamp", value: sketch.inferenceTimestamp || "?" }
+  ];
+  return `
+    <div class="pv-card-body">
+      ${kv(rows)}
+      <div class="pv-label">Hypothesis</div>
+      <div class="pv-hypothesis">${escapeHtml(sketch.hypothesis || "(none)")}</div>
+    </div>`;
+}
+
+// Stage 5 — Validation (compile result + static checks derived from this sketch's GLSL)
+function renderValidation(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const compile = sketch.compile || {};
+  const success = compile.success === true;
+  const failed = compile.success === false;
+  const unknown = compile.success == null;
+  const status = success ? "PASS" : failed ? "FAIL" : "UNKNOWN";
+  const statusCls = success ? "pv-status-ok" : failed ? "pv-status-fail" : "pv-status-unknown";
+
+  const glsl = sketch.glsl || "";
+  const checks = [
+    { label: "Length ≥ 80 chars", pass: glsl.length >= 80 },
+    { label: "void main() present", pass: /void\s+main\s*\(/.test(glsl) },
+    { label: "gl_FragColor present", pass: /gl_FragColor/.test(glsl) },
+    { label: "WebGL 1.0 (no `out vec4`, no `texture()`)", pass: !/\bout\s+vec4/.test(glsl) && !/\btexture\s*\(/.test(glsl) },
+    { label: "Balanced braces", pass: (glsl.match(/\{/g) || []).length === (glsl.match(/\}/g) || []).length },
+    { label: "Balanced parens", pass: (glsl.match(/\(/g) || []).length === (glsl.match(/\)/g) || []).length }
+  ];
+
+  return `
+    <div class="pv-card-body">
+      <div class="pv-status-row">
+        <span class="pv-status ${statusCls}">${status}</span>
+        ${compile.reportedAt ? `<span class="pv-timestamp">${escapeHtml(new Date(compile.reportedAt).toLocaleString())}</span>` : ""}
+      </div>
+      ${failed && compile.error ? `
+        <div class="pv-label">Compile error</div>
+        <pre class="pv-error">${escapeHtml(compile.error)}</pre>
+      ` : ""}
+      <div class="pv-label">Static checks (from this sketch's GLSL)</div>
+      <ul class="pv-checks">${checks.map(c =>
+        `<li class="${c.pass ? "pv-check-ok" : "pv-check-fail"}"><span class="pv-check-mark">${c.pass ? "✓" : "✗"}</span>${escapeHtml(c.label)}</li>`
+      ).join("")}</ul>
+    </div>`;
+}
+
+// Stage 6 — Pattern Match (patternIds + codeFeatures breakdown)
+function renderPattern(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const ids = sketch.patternIds || [];
+  const features = sketch.codeFeatures || {};
+  const fns = features.functions || [];
+  const tech = features.techniques || [];
+
+  return `
+    <div class="pv-card-body">
+      <div class="pv-label">Detected pattern IDs</div>
+      ${ids.length
+        ? `<div class="pv-pills">${ids.map(id => pill(id, "pv-pill-pattern")).join("")}</div>`
+        : `<div class="pv-missing">(no pattern ids detected)</div>`}
+      ${fns.length ? `
+        <div class="pv-label">Functions called in shader</div>
+        <div class="pv-pills">${fns.map(fn => pill(fn + "()", "pv-pill-fn")).join("")}</div>
+      ` : ""}
+      ${tech.length ? `
+        <div class="pv-label">Techniques</div>
+        <div class="pv-pills">${tech.map(t => pill(t, "pv-pill-tech")).join("")}</div>
+      ` : ""}
+      ${(features.motion || features.composition || features.palette || features.complexity) ? `
+        <div class="pv-label">Features</div>
+        ${kv([
+          features.motion?.length ? { label: "Motion", value: features.motion.join(", ") } : null,
+          features.composition?.length ? { label: "Composition", value: features.composition.join(", ") } : null,
+          features.palette?.length ? { label: "Palette", value: features.palette.join(", ") } : null,
+          features.complexity ? { label: "Complexity", value: features.complexity } : null
+        ].filter(Boolean))}
+      ` : ""}
+    </div>`;
+}
+
+// Stage 7 — Output Shader (title/type/DNA + thumbnail or placeholder)
+function renderOutput(sketch /*, ctx */) {
+  if (!sketch) return `<div class="pv-empty">No sketch selected.</div>`;
+  const dna = sketch.dna || [];
+  const thumb = sketch.thumbnail;
+  const previewHtml = thumb
+    ? `<img class="pv-preview-img" src="${escapeHtml(thumb)}" alt="Rendered preview of ${escapeHtml(sketch.title || sketch.id || "")}" loading="lazy" />`
+    : `<div class="pv-preview-placeholder">
+         <div class="pv-preview-icon">▶</div>
+         <div class="pv-preview-text">Live preview in dialog only — rate this shader 4+ to capture a thumbnail.</div>
+       </div>`;
+
+  return `
+    <div class="pv-card-body">
+      <div class="pv-label">Title</div>
+      <div class="pv-output-title">${escapeHtml(sketch.title || "Untitled")}</div>
+      ${kv([
+        { label: "Type", value: sketch.type || "?" },
+        sketch.rating ? { label: "Your rating", value: `${sketch.rating}/5` } : null,
+        sketch.compile?.success === false ? { label: "Compile", value: "FAILED", html: `<span class="pv-status pv-status-fail">FAILED</span>` } : null
+      ].filter(Boolean))}
+      ${dna.length ? `
+        <div class="pv-label">DNA</div>
+        <div class="pv-pills">${dna.map(t => pill(t, "pv-pill-dna")).join("")}</div>
+      ` : ""}
+      <div class="pv-label">Preview</div>
+      <div class="pv-preview">${previewHtml}</div>
+    </div>`;
+}
+
+// ---------- composition + lifecycle ----------
+
+function renderCard(stage, sketch, ctx, selected) {
+  const body = stage.render(sketch, ctx);
+  const cls = selected ? "pv-card pv-card-selected" : "pv-card";
+  return `
+    <article class="${cls}" data-stage="${stage.id}" style="--stage-color:${stage.color}">
+      <header class="pv-card-head">
+        <span class="pv-card-num">${stage.number}</span>
+        <span class="pv-card-name">${stage.name}</span>
+      </header>
+      ${body}
+    </article>`;
+}
+
+function renderTrack(sketch, ctx, selectedIndex) {
+  return STAGES.map((s, i) => renderCard(s, sketch, ctx, i === selectedIndex)).join("");
+}
+
+function rerenderTrack() {
   if (!state) return;
-  state.selectedIndex = idx;
-  state.layerMeshes.forEach((m, i) => {
-    const mat = m.material;
-    if (i === idx) {
-      mat.emissive = new THREE.Color(0x442211);
-      mat.opacity = 1.0;
-    } else {
-      mat.emissive = new THREE.Color(0x000000);
-      mat.opacity = 0.88;
+  const track = state.container.querySelector(".pv-track");
+  if (!track) return;
+  track.innerHTML = renderTrack(state.currentSketch, state.ctx, state.selectedIndex);
+  // Re-bind click handlers (innerHTML replaces them).
+  state.container.querySelectorAll(".pv-card").forEach(el => {
+    const idx = STAGES.findIndex(s => s.id === el.dataset.stage);
+    if (idx >= 0) {
+      el.addEventListener("click", () => selectStage(idx));
     }
   });
-  const layer = LAYER_DEFS[idx];
-  if (state.layerPanel) {
-    const header = state.layerPanel.querySelector("[data-pipeline-header]");
-    if (header) header.textContent = `${idx + 1}. ${layer.name}`;
-    const body = state.layerPanel.querySelector("[data-pipeline-body]");
-    if (body) {
-      body.innerHTML = `
-        <p class="pipeline-layer-short">${escapeHtml(layer.short)}</p>
-        ${renderLayerBody(layer, state.currentSketch)}`;
-    }
-  }
 }
 
-function resize() {
-  if (!state || !state.container) return;
-  const rect = state.container.getBoundingClientRect();
-  if (rect.width < 1 || rect.height < 1) return;
-  const w = Math.max(1, Math.floor(rect.width));
-  const h = Math.max(1, Math.floor(rect.height));
-  state.renderer.setSize(w, h, false);
-  state.camera.aspect = w / h;
-  state.camera.updateProjectionMatrix();
-}
-
-function animate() {
-  if (!state || state.closed) return;
-  requestAnimationFrame(animate);
-  if (state.autoRotate) state.rotation += 0.004;
-  state.scene.rotation.y = state.rotation;
-  state.renderer.render(state.scene, state.camera);
-}
-
-function teardown() {
+function selectStage(idx) {
   if (!state) return;
-  state.closed = true;
-  if (state.animFrameId) cancelAnimationFrame(state.animFrameId);
-  if (state.renderer) {
-    state.renderer.dispose();
-    const canvas = state.renderer.domElement;
-    if (canvas?.parentNode) canvas.parentNode.removeChild(canvas);
-  }
-  state.container = null;
-  state.layerPanel = null;
-  state = null;
+  state.selectedIndex = idx;
+  rerenderTrack();
 }
 
-export function openInline(sketch, containerEl, layerPanelEl) {
+export async function openInline(sketch, containerEl, layerPanelEl) {
   if (!containerEl) return;
-  if (state) teardown();
+  if (state) close();
 
-  const { scene, camera, layerMeshes } = buildScene();
-  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-  renderer.setPixelRatio(window.devicePixelRatio || 1);
-  renderer.setClearColor(0x000000, 0);
-  containerEl.appendChild(renderer.domElement);
-  renderer.domElement.style.cursor = "grab";
+  containerEl.classList.add("pv-container");
+  containerEl.innerHTML = `
+    <div class="pv-track-wrap">
+      <div class="pv-track">${renderTrack(sketch, { state: null, sketches: [] }, 3)}</div>
+    </div>
+    <p class="pv-hint">Click a card to highlight it. Every stage shows the real artifact for this sketch — no rotation, no hidden data.</p>
+  `;
+
+  // Legacy layer panel is unused in this design — hide it.
+  if (layerPanelEl) {
+    layerPanelEl.hidden = true;
+    layerPanelEl.style.display = "none";
+  }
 
   state = {
-    renderer,
-    scene,
-    camera,
     container: containerEl,
     layerPanel: layerPanelEl,
-    layerMeshes,
     currentSketch: sketch,
-    selectedIndex: -1,
-    rotation: 0,
-    autoRotate: true,
+    selectedIndex: 3,
+    ctx: { state: null, sketches: [] },
     closed: false
   };
 
-  const raycaster = new THREE.Raycaster();
-  const pointer = new THREE.Vector2();
-  let dragging = false;
-  let dragX = 0;
+  rerenderTrack();
 
-  renderer.domElement.addEventListener("pointermove", (ev) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
-    if (dragging) return;
-    raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(layerMeshes);
-    layerMeshes.forEach((m) => m.scale.set(1, 1, 1));
-    if (hits.length) {
-      hits[0].object.scale.set(1.08, 1.12, 1.08);
-      renderer.domElement.style.cursor = "pointer";
-    } else {
-      renderer.domElement.style.cursor = "grab";
-    }
-  });
-
-  renderer.domElement.addEventListener("click", (ev) => {
-    const rect = renderer.domElement.getBoundingClientRect();
-    pointer.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
-    pointer.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
-    raycaster.setFromCamera(pointer, camera);
-    const hits = raycaster.intersectObjects(layerMeshes);
-    if (hits.length) {
-      state.autoRotate = false;
-      selectLayer(hits[0].object.userData.layerIndex);
-    }
-  });
-
-  renderer.domElement.addEventListener("pointerdown", (ev) => {
-    dragging = true;
-    dragX = ev.clientX;
-    state.autoRotate = false;
-    renderer.domElement.style.cursor = "grabbing";
-  });
-  window.addEventListener("pointerup", () => {
-    dragging = false;
-    if (renderer.domElement?.style) renderer.domElement.style.cursor = "grab";
-  });
-  window.addEventListener("pointermove", (ev) => {
-    if (!dragging) return;
-    const delta = (ev.clientX - dragX) / 200;
-    state.rotation += delta;
-    dragX = ev.clientX;
-  });
-
-  resize();
-  animate();
-  selectLayer(sketch ? 3 : 0);
+  // Fetch live state for memory card. Re-render when ready.
+  const fetched = await fetchState();
+  if (!state || state.closed) return;
+  state.ctx.state = fetched.state;
+  state.ctx.sketches = fetched.sketches;
+  rerenderTrack();
 }
 
 export function setSketch(sketch) {
   if (!state) return;
   state.currentSketch = sketch;
-  state.selectedIndex = -1;
-  state.autoRotate = true;
-  state.rotation = 0;
-  selectLayer(sketch ? 3 : 0);
+  state.selectedIndex = 3;
+  rerenderTrack();
 }
 
 export function close() {
-  teardown();
+  if (!state) return;
+  state.closed = true;
+  if (state.container) state.container.innerHTML = "";
+  state.container = null;
+  state.layerPanel = null;
+  state = null;
 }
 
 export function relayoutInline() {
-  if (state) resize();
+  // CSS is responsive — nothing to recalc.
 }
 
 window.PipelineViewer = { openInline, setSketch, close, relayoutInline };
-window.addEventListener("resize", () => { if (state) resize(); });
